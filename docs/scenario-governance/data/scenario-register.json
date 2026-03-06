@@ -1,0 +1,229 @@
+[
+  {
+    "scenarioId": "GOV-01",
+    "scenarioName": "Create club + assign CTA",
+    "outcome": "Club exists with technical admin membership and can proceed to onboarding/publish path",
+    "ownerMilestone": 3,
+    "dependencies": [1],
+    "mvpScope": true,
+    "status": 50,
+    "prdLinks": [
+      "M3 Club Management & Onboarding",
+      "M1 Platform Foundation",
+      "docs/scenario-governance/scenario-packs/critical-path.md#gov-01-create-club--assign-cta"
+    ],
+    "testIds": [
+      "admin.api: club management flows (indirect)",
+      "manual:GOV-01"
+    ],
+    "evidenceLinks": [
+      "tests/admin.api.test.mjs",
+      "docs/scenario-governance/generated/traceability-matrix-b.md"
+    ],
+    "gapNote": "No dedicated E2E scenario script proving create-club -> assign CTA -> onboarding handoff as one journey.",
+    "backlogLink": "M3-SCEN-GOV-01-e2e-and-evidence"
+  },
+  {
+    "scenarioId": "INV-01",
+    "scenarioName": "Create/publish seat map",
+    "outcome": "Published map version exists and downstream seat-index consumers can use it",
+    "ownerMilestone": 4,
+    "dependencies": [1, 3],
+    "mvpScope": true,
+    "status": 50,
+    "prdLinks": [
+      "M4 Seat Map Engine",
+      "M3 Club Management & Onboarding",
+      "docs/scenario-governance/scenario-packs/critical-path.md#inv-01-createpublish-seat-map"
+    ],
+    "testIds": [
+      "admin.api: map publish setup (indirect)",
+      "manual:INV-01"
+    ],
+    "evidenceLinks": [
+      "tests/admin.api.test.mjs"
+    ],
+    "gapNote": "Map editor/publish path works, but dedicated scenario evidence with publish diff + rollback checks is missing.",
+    "backlogLink": "M4-SCEN-INV-01-proof-pack"
+  },
+  {
+    "scenarioId": "INV-03",
+    "scenarioName": "Create segments + assign seats",
+    "outcome": "Seat inventory is segmented and segment assignments are used by pricing/availability",
+    "ownerMilestone": 8,
+    "dependencies": [4],
+    "mvpScope": true,
+    "status": 50,
+    "prdLinks": [
+      "M8 Pricing & Packages",
+      "M4 Seat Map Engine",
+      "docs/scenario-governance/scenario-packs/critical-path.md#inv-03-create-segments--assign-seats"
+    ],
+    "testIds": [
+      "contracts.api: availability shape (uses segment-linked seats)",
+      "manual:INV-03"
+    ],
+    "evidenceLinks": [
+      "tests/contracts.api.test.mjs"
+    ],
+    "gapNote": "No dedicated test asserting segment reassignment and downstream behavior changes.",
+    "backlogLink": "M8-SCEN-INV-03-segment-assignment-tests"
+  },
+  {
+    "scenarioId": "INV-04",
+    "scenarioName": "Publish pricing rules / quote snapshot",
+    "outcome": "Published pricing version produces deterministic quotes and snapshots for bookings",
+    "ownerMilestone": 8,
+    "dependencies": [4],
+    "mvpScope": true,
+    "status": 100,
+    "prdLinks": [
+      "M8 Pricing & Packages",
+      "M4 Seat Map Engine",
+      "docs/scenario-governance/scenario-packs/critical-path.md#inv-04-publish-pricing-rules--quote-snapshot"
+    ],
+    "testIds": [
+      "contracts.api: pricing quote success/rejection",
+      "promo.api: quote determinism + promo rejection",
+      "membership.api: quote membership application determinism"
+    ],
+    "evidenceLinks": [
+      "tests/contracts.api.test.mjs",
+      "tests/promo.api.test.mjs",
+      "tests/membership.api.test.mjs"
+    ],
+    "gapNote": "",
+    "backlogLink": ""
+  },
+  {
+    "scenarioId": "SCH-01",
+    "scenarioName": "Publish schedule / slots",
+    "outcome": "Schedule template and exceptions produce published slot horizon for booking/discovery",
+    "ownerMilestone": 5,
+    "dependencies": [4, 8],
+    "mvpScope": true,
+    "status": 100,
+    "prdLinks": [
+      "M5 Schedule & Slot Generation",
+      "M4 Seat Map Engine",
+      "M8 Pricing & Packages",
+      "docs/scenario-governance/scenario-packs/critical-path.md#sch-01-publish-scheduleslots"
+    ],
+    "testIds": [
+      "contracts.api: slots contract",
+      "reschedule.api: schedule publish setup + slots lookup",
+      "membership.api: schedule publish setup"
+    ],
+    "evidenceLinks": [
+      "tests/contracts.api.test.mjs",
+      "tests/reschedule.api.test.mjs",
+      "tests/membership.api.test.mjs"
+    ],
+    "gapNote": "",
+    "backlogLink": ""
+  },
+  {
+    "scenarioId": "SCH-03",
+    "scenarioName": "Set seat unavailable / hold",
+    "outcome": "Availability overlay reflects held/booked seats and denies conflicting reservation attempts",
+    "ownerMilestone": 6,
+    "dependencies": [5],
+    "mvpScope": true,
+    "status": 100,
+    "prdLinks": [
+      "M6 Availability Service",
+      "M5 Schedule & Slot Generation",
+      "docs/scenario-governance/scenario-packs/critical-path.md#sch-03-set-seat-unavailablehold"
+    ],
+    "testIds": [
+      "contracts.api: availability contract",
+      "feature-flags.api: holds kill switch",
+      "perf-k6: profile B/C"
+    ],
+    "evidenceLinks": [
+      "tests/contracts.api.test.mjs",
+      "tests/feature-flags.api.test.mjs",
+      "perf/k6/profile-b-availability-polling.js",
+      "perf/k6/profile-c-booking-contention.js"
+    ],
+    "gapNote": "",
+    "backlogLink": ""
+  },
+  {
+    "scenarioId": "BK-01",
+    "scenarioName": "Book seat (pay later or no payment)",
+    "outcome": "Booking is created/confirmed, seat becomes unavailable, price snapshot persists, operational payment can follow",
+    "ownerMilestone": 7,
+    "dependencies": [1, 2, 5, 6, 8, 11],
+    "mvpScope": true,
+    "status": 100,
+    "prdLinks": [
+      "M7 Booking Engine",
+      "M6 Availability Service",
+      "M8 Pricing & Packages",
+      "M11 Offline Payments Operations",
+      "docs/scenario-governance/scenario-packs/critical-path.md#bk-01-book-seat-pay-later-or-no-payment"
+    ],
+    "testIds": [
+      "membership.api: hold confirm consumes membership once",
+      "promo.api: booking confirmation consumes promo and records stats",
+      "admin.api: client booking create used in admin flows"
+    ],
+    "evidenceLinks": [
+      "tests/membership.api.test.mjs",
+      "tests/promo.api.test.mjs",
+      "tests/admin.api.test.mjs"
+    ],
+    "gapNote": "",
+    "backlogLink": ""
+  },
+  {
+    "scenarioId": "BK-03",
+    "scenarioName": "Cancel booking (no refund)",
+    "outcome": "Booking is canceled, audit trail written, availability recovers per policy without refund execution",
+    "ownerMilestone": 7,
+    "dependencies": [6, 11],
+    "mvpScope": true,
+    "status": 50,
+    "prdLinks": [
+      "M7 Booking Engine",
+      "M6 Availability Service",
+      "M11 Offline Payments Operations",
+      "docs/scenario-governance/scenario-packs/critical-path.md#bk-03-cancel-booking-no-refund"
+    ],
+    "testIds": [
+      "admin.api: booking override cancellation requires reason + audit",
+      "membership.api: cancel reverses membership consumption"
+    ],
+    "evidenceLinks": [
+      "tests/admin.api.test.mjs",
+      "tests/membership.api.test.mjs"
+    ],
+    "gapNote": "Dedicated no-refund client/host cancellation scenario proof with availability recovery assertions is still missing.",
+    "backlogLink": "M7-SCEN-BK-03-dedicated-cancel-e2e"
+  },
+  {
+    "scenarioId": "SEARCH-01",
+    "scenarioName": "Discover club/session and start booking",
+    "outcome": "Client discovers a club/session and reaches a valid booking start path",
+    "ownerMilestone": 14,
+    "dependencies": [3, 5],
+    "mvpScope": true,
+    "status": 50,
+    "prdLinks": [
+      "M14 Search & Discovery",
+      "M3 Club Management & Onboarding",
+      "M5 Schedule & Slot Generation",
+      "docs/scenario-governance/scenario-packs/critical-path.md#search-01-discover-clubsession-and-start-booking"
+    ],
+    "testIds": [
+      "admin.api: pause hides club from public discovery",
+      "manual:SEARCH-01"
+    ],
+    "evidenceLinks": [
+      "tests/admin.api.test.mjs"
+    ],
+    "gapNote": "No dedicated browser/API E2E proves public discovery -> slot selection -> booking start as a single tracked scenario.",
+    "backlogLink": "M14-SCEN-SEARCH-01-e2e"
+  }
+]

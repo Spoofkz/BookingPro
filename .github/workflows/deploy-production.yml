@@ -1,0 +1,50 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image/build tag to deploy"
+        required: true
+      canary_percent:
+        description: "Initial canary percent (e.g. 5)"
+        required: true
+        default: "5"
+
+jobs:
+  production-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Manual release gate reminder
+        run: |
+          echo "Required before continue: staging green, load smoke B/C/D passed, rollback plan reviewed."
+
+      - name: Deploy canary
+        run: |
+          echo "Deploy canary ${CANARY}% for tag ${TAG}."
+        env:
+          TAG: ${{ github.event.inputs.image_tag }}
+          CANARY: ${{ github.event.inputs.canary_percent }}
+
+      - name: Monitor canary hold period
+        run: |
+          echo "Observe p95/5xx/booking success SLOs before promotion."
+          sleep 30
+
+      - name: Promote canary to full rollout
+        run: |
+          echo "Promote deployment to 100% traffic."
+
+      - name: Rollback instructions (manual fallback)
+        if: failure()
+        run: |
+          echo "Rollback to previous stable tag and enable kill switches if needed:"
+          echo "RELEASE_DISABLE_HOLDS=true"
+          echo "RELEASE_DISABLE_RESCHEDULE=true"
+          echo "RELEASE_DISABLE_PROMOS=true"
+          echo "RELEASE_DISABLE_MEMBERSHIP_APPLY=true"
+

@@ -1,0 +1,22 @@
+{
+  "$id": "clubs.availability.response",
+  "type": "object",
+  "required": ["slotId", "seats"],
+  "properties": {
+    "slotId": { "type": "string" },
+    "clubId": { "type": "string" },
+    "floorId": { "type": "string" },
+    "seats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["seatId", "status"],
+        "properties": {
+          "seatId": { "type": "string" },
+          "status": { "type": "string" },
+          "holdExpiresAt": { "type": "string" }
+        }
+      }
+    }
+  }
+}

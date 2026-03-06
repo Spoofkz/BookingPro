@@ -1,0 +1,34 @@
+name: Deploy Staging
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  staging-deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pre-deploy checklist gate
+        run: |
+          echo "Verify CI green, migration plan reviewed, and staging secrets configured."
+
+      - name: Deploy application to staging
+        run: |
+          echo "Replace this step with your staging deploy command (e.g. Terraform/Helm/Vercel/SSH)."
+          exit 0
+
+      - name: Run safe migrations
+        run: |
+          echo "Run prisma migrate deploy against staging DB here."
+          exit 0
+
+      - name: Staging smoke tests
+        run: |
+          echo "Run smoke e2e subset + contract tests against staging URL."
+          exit 0
+

@@ -1,0 +1,10 @@
+{
+  "$id": "errors.basic",
+  "type": "object",
+  "required": ["error"],
+  "properties": {
+    "code": { "type": "string" },
+    "error": { "type": "string" },
+    "details": { "type": "object" }
+  }
+}

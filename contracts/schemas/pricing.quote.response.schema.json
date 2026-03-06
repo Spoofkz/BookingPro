@@ -1,0 +1,44 @@
+{
+  "$id": "pricing.quote.response",
+  "type": "object",
+  "required": ["quoteId", "currency", "total", "breakdown", "computedAt", "validUntil"],
+  "properties": {
+    "quoteId": { "type": "string" },
+    "currency": { "type": "string" },
+    "pricingVersionId": { "type": "string" },
+    "total": { "type": "number" },
+    "baseTotal": { "type": "number" },
+    "totalDue": { "type": "number" },
+    "computedAt": { "type": "string" },
+    "validUntil": { "type": "string" },
+    "breakdown": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "label", "amount"],
+        "properties": {
+          "type": { "type": "string" },
+          "label": { "type": "string" },
+          "amount": { "type": "number" }
+        }
+      }
+    },
+    "promotion": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "id": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+            "code": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+            "type": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+            "status": { "type": "string" },
+            "rejectionReason": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+            "discountAmount": { "type": "number" }
+          }
+        }
+      ]
+    }
+  }
+}

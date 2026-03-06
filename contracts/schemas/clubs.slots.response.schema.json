@@ -1,0 +1,20 @@
+{
+  "$id": "clubs.slots.response",
+  "type": "object",
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slotId", "status", "startAt", "endAt"],
+        "properties": {
+          "slotId": { "type": "string" },
+          "status": { "type": "string" },
+          "startAt": { "type": "string" },
+          "endAt": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,65 @@
+[
+  {
+    "scenarioId": "GOV-01",
+    "ownerMilestone": 3,
+    "dependencyMilestones": [1],
+    "ownerPrdContainsScenarioPack": false,
+    "notes": "Companion Scenario Pack exists in docs/scenario-governance/scenario-packs/critical-path.md; milestone PRD source document not tracked in repo."
+  },
+  {
+    "scenarioId": "INV-01",
+    "ownerMilestone": 4,
+    "dependencyMilestones": [1, 3],
+    "ownerPrdContainsScenarioPack": false,
+    "notes": "Companion Scenario Pack exists; merge into milestone PRD source pending."
+  },
+  {
+    "scenarioId": "INV-03",
+    "ownerMilestone": 8,
+    "dependencyMilestones": [4],
+    "ownerPrdContainsScenarioPack": false,
+    "notes": "Companion Scenario Pack exists; merge into milestone PRD source pending."
+  },
+  {
+    "scenarioId": "INV-04",
+    "ownerMilestone": 8,
+    "dependencyMilestones": [4],
+    "ownerPrdContainsScenarioPack": false,
+    "notes": "Companion Scenario Pack exists; merge into milestone PRD source pending."
+  },
+  {
+    "scenarioId": "SCH-01",
+    "ownerMilestone": 5,
+    "dependencyMilestones": [4, 8],
+    "ownerPrdContainsScenarioPack": false,
+    "notes": "Companion Scenario Pack exists; merge into milestone PRD source pending."
+  },
+  {
+    "scenarioId": "SCH-03",
+    "ownerMilestone": 6,
+    "dependencyMilestones": [5],
+    "ownerPrdContainsScenarioPack": false,
+    "notes": "Companion Scenario Pack exists; merge into milestone PRD source pending."
+  },
+  {
+    "scenarioId": "BK-01",
+    "ownerMilestone": 7,
+    "dependencyMilestones": [1, 2, 5, 6, 8, 11],
+    "ownerPrdContainsScenarioPack": false,
+    "notes": "Companion Scenario Pack exists; merge into milestone PRD source pending."
+  },
+  {
+    "scenarioId": "BK-03",
+    "ownerMilestone": 7,
+    "dependencyMilestones": [6, 11],
+    "ownerPrdContainsScenarioPack": false,
+    "notes": "Companion Scenario Pack exists; merge into milestone PRD source pending."
+  },
+  {
+    "scenarioId": "SEARCH-01",
+    "ownerMilestone": 14,
+    "dependencyMilestones": [3, 5],
+    "ownerPrdContainsScenarioPack": false,
+    "notes": "Companion Scenario Pack exists; merge into milestone PRD source pending."
+  }
+]

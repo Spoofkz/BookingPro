@@ -1,0 +1,93 @@
+import { Role } from '@prisma/client'
+
+export const PERMISSIONS = {
+  CLUB_READ: 'club:read',
+  CLUB_MANAGE_PROFILE: 'club:manage_profile',
+  CLUB_PUBLISH_PAUSE: 'club:publish_pause',
+  MAP_EDIT: 'map:edit',
+  MAP_PUBLISH: 'map:publish',
+  PRICING_EDIT: 'pricing:edit',
+  PRICING_PUBLISH: 'pricing:publish',
+  SCHEDULE_EDIT: 'schedule:edit',
+  SCHEDULE_PUBLISH: 'schedule:publish',
+  BOOKING_READ: 'booking:read',
+  BOOKING_CREATE: 'booking:create',
+  BOOKING_CANCEL: 'booking:cancel',
+  BOOKING_MOVE_SEAT: 'booking:move_seat',
+  BOOKING_RESCHEDULE: 'booking:reschedule',
+  BOOKING_CHECK_IN: 'booking:check_in',
+  CUSTOMER_READ: 'customer:read',
+  CUSTOMER_WRITE: 'customer:write',
+  MEMBERSHIP_READ: 'membership:read',
+  MEMBERSHIP_SELL: 'membership:sell',
+  MEMBERSHIP_ADJUST: 'membership:adjust',
+  MEMBERSHIP_PLAN_MANAGE: 'membership:plan_manage',
+  PROMO_MANAGE: 'promo:manage',
+  PROMO_APPLY_OFFLINE: 'promo:apply_offline',
+  PAYMENT_MARK_PAID: 'payment:mark_paid',
+  STAFF_INVITE_MANAGE: 'staff:invite_manage',
+  CLIENT_SELF_READ: 'client:self_read',
+} as const
+
+export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS]
+
+const TECH_ADMIN_PERMISSIONS: Permission[] = [
+  PERMISSIONS.CLUB_READ,
+  PERMISSIONS.CLUB_MANAGE_PROFILE,
+  PERMISSIONS.CLUB_PUBLISH_PAUSE,
+  PERMISSIONS.MAP_EDIT,
+  PERMISSIONS.MAP_PUBLISH,
+  PERMISSIONS.PRICING_EDIT,
+  PERMISSIONS.PRICING_PUBLISH,
+  PERMISSIONS.SCHEDULE_EDIT,
+  PERMISSIONS.SCHEDULE_PUBLISH,
+  PERMISSIONS.BOOKING_READ,
+  PERMISSIONS.BOOKING_CREATE,
+  PERMISSIONS.BOOKING_CANCEL,
+  PERMISSIONS.BOOKING_MOVE_SEAT,
+  PERMISSIONS.BOOKING_RESCHEDULE,
+  PERMISSIONS.BOOKING_CHECK_IN,
+  PERMISSIONS.CUSTOMER_READ,
+  PERMISSIONS.CUSTOMER_WRITE,
+  PERMISSIONS.MEMBERSHIP_READ,
+  PERMISSIONS.MEMBERSHIP_SELL,
+  PERMISSIONS.MEMBERSHIP_ADJUST,
+  PERMISSIONS.MEMBERSHIP_PLAN_MANAGE,
+  PERMISSIONS.PROMO_MANAGE,
+  PERMISSIONS.PROMO_APPLY_OFFLINE,
+  PERMISSIONS.PAYMENT_MARK_PAID,
+  PERMISSIONS.STAFF_INVITE_MANAGE,
+]
+
+const HOST_ADMIN_PERMISSIONS: Permission[] = [
+  PERMISSIONS.CLUB_READ,
+  PERMISSIONS.BOOKING_READ,
+  PERMISSIONS.BOOKING_CREATE,
+  PERMISSIONS.BOOKING_CANCEL,
+  PERMISSIONS.BOOKING_MOVE_SEAT,
+  PERMISSIONS.BOOKING_RESCHEDULE,
+  PERMISSIONS.BOOKING_CHECK_IN,
+  PERMISSIONS.CUSTOMER_READ,
+  PERMISSIONS.CUSTOMER_WRITE,
+  PERMISSIONS.MEMBERSHIP_READ,
+  PERMISSIONS.MEMBERSHIP_SELL,
+  PERMISSIONS.PROMO_APPLY_OFFLINE,
+  PERMISSIONS.PAYMENT_MARK_PAID,
+]
+
+const CLIENT_GLOBAL_PERMISSIONS: Permission[] = [PERMISSIONS.CLIENT_SELF_READ]
+
+export function permissionsForRole(role: Role): Permission[] {
+  if (role === Role.TECH_ADMIN) return TECH_ADMIN_PERMISSIONS
+  if (role === Role.HOST_ADMIN) return HOST_ADMIN_PERMISSIONS
+  return []
+}
+
+export function globalPermissionsForRole(role: Role): Permission[] {
+  if (role === Role.CLIENT) return CLIENT_GLOBAL_PERMISSIONS
+  return []
+}
+
+export function hasPermissionInClub(roles: Role[], permission: Permission) {
+  return roles.some((role) => permissionsForRole(role).includes(permission))
+}

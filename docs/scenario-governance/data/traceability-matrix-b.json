@@ -1,0 +1,11 @@
+[
+  { "scenarioId": "GOV-01", "acLinked": true, "testsLinked": true, "evidenceLinked": true, "coverageVerdict": "Partial" },
+  { "scenarioId": "INV-01", "acLinked": true, "testsLinked": true, "evidenceLinked": true, "coverageVerdict": "Partial" },
+  { "scenarioId": "INV-03", "acLinked": true, "testsLinked": true, "evidenceLinked": true, "coverageVerdict": "Partial" },
+  { "scenarioId": "INV-04", "acLinked": true, "testsLinked": true, "evidenceLinked": true, "coverageVerdict": "Covered" },
+  { "scenarioId": "SCH-01", "acLinked": true, "testsLinked": true, "evidenceLinked": true, "coverageVerdict": "Covered" },
+  { "scenarioId": "SCH-03", "acLinked": true, "testsLinked": true, "evidenceLinked": true, "coverageVerdict": "Covered" },
+  { "scenarioId": "BK-01", "acLinked": true, "testsLinked": true, "evidenceLinked": true, "coverageVerdict": "Covered" },
+  { "scenarioId": "BK-03", "acLinked": true, "testsLinked": true, "evidenceLinked": true, "coverageVerdict": "Partial" },
+  { "scenarioId": "SEARCH-01", "acLinked": true, "testsLinked": true, "evidenceLinked": true, "coverageVerdict": "Partial" }
+]

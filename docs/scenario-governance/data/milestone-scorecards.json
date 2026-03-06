@@ -1,0 +1,198 @@
+{
+  "1": {
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": true,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "3": {
+    "policyFailureChecklist": {
+      "ttlExpiry": false,
+      "concurrencyConflict": false,
+      "forbiddenAction": true,
+      "invalidStateTransition": true,
+      "idempotencyRetry": false,
+      "externalIntegrationFailure": false
+    },
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": true,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "4": {
+    "policyFailureChecklist": {
+      "ttlExpiry": false,
+      "concurrencyConflict": false,
+      "forbiddenAction": true,
+      "invalidStateTransition": true,
+      "idempotencyRetry": false,
+      "externalIntegrationFailure": false
+    },
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": true,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "5": {
+    "policyFailureChecklist": {
+      "ttlExpiry": false,
+      "concurrencyConflict": false,
+      "forbiddenAction": true,
+      "invalidStateTransition": true,
+      "idempotencyRetry": true,
+      "externalIntegrationFailure": false
+    },
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": true,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "6": {
+    "policyFailureChecklist": {
+      "ttlExpiry": true,
+      "concurrencyConflict": true,
+      "forbiddenAction": true,
+      "invalidStateTransition": false,
+      "idempotencyRetry": true,
+      "externalIntegrationFailure": false
+    },
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": false,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "7": {
+    "policyFailureChecklist": {
+      "ttlExpiry": true,
+      "concurrencyConflict": true,
+      "forbiddenAction": true,
+      "invalidStateTransition": true,
+      "idempotencyRetry": true,
+      "externalIntegrationFailure": false
+    },
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": true,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "8": {
+    "policyFailureChecklist": {
+      "ttlExpiry": false,
+      "concurrencyConflict": false,
+      "forbiddenAction": true,
+      "invalidStateTransition": true,
+      "idempotencyRetry": true,
+      "externalIntegrationFailure": false
+    },
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": true,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "11": {
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": true,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "14": {
+    "policyFailureChecklist": {
+      "ttlExpiry": false,
+      "concurrencyConflict": false,
+      "forbiddenAction": true,
+      "invalidStateTransition": false,
+      "idempotencyRetry": false,
+      "externalIntegrationFailure": false
+    },
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": true,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "17": {
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": true,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "23": {
+    "securityAuditObservability": {
+      "rbacTenancyProven": true,
+      "auditVisible": true,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  },
+  "24": {
+    "policyFailureChecklist": {
+      "ttlExpiry": true,
+      "concurrencyConflict": true,
+      "forbiddenAction": true,
+      "invalidStateTransition": true,
+      "idempotencyRetry": true,
+      "externalIntegrationFailure": false
+    },
+    "securityAuditObservability": {
+      "rbacTenancyProven": false,
+      "auditVisible": false,
+      "logsMetricsEvidence": false
+    },
+    "testsReleaseSignals": {
+      "testsEvidence": true,
+      "ciOrStagingEvidence": true
+    }
+  }
+}
