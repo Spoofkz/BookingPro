@@ -387,14 +387,14 @@ export async function loadClubOnboardingReport(clubId: string): Promise<Onboardi
     makeItem({
       key: ONBOARDING_KEYS.ADDRESS_AND_GEO,
       missing: profileRecommendedMissing,
-      fixLink: '/cabinet/tech/onboarding',
+      fixLink: '/cabinet/tech/onboarding#address-geo',
       started: Boolean(club.address || club.geoLat != null || club.geoLng != null),
       critical: false,
     }),
     makeItem({
       key: ONBOARDING_KEYS.BRANDING_ASSETS,
       missing: brandingMissing,
-      fixLink: '/cabinet/tech/onboarding',
+      fixLink: '/cabinet/tech/onboarding#branding-assets',
       started: Boolean(club.description || club.logoUrl || galleryUrls.length > 0),
       critical: false,
     }),

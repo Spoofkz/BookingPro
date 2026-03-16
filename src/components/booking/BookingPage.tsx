@@ -272,7 +272,7 @@ export default function BookingPage() {
       const payload = {
         name: roomForm.name,
         capacity: Number(roomForm.capacity),
-        pricePerNightCents: Math.round(pricePerNight * 100),
+        pricePerNightCents: Math.round(pricePerNight),
       }
 
       const response = await fetch('/api/rooms', {
@@ -516,7 +516,7 @@ export default function BookingPage() {
               >
                 {rooms.map((room) => (
                   <option key={room.id} value={room.id}>
-                    {room.name} · {room.capacity} guests · ${(room.pricePerNightCents / 100).toFixed(2)}
+                    {room.name} · {room.capacity} guests · {Math.trunc(room.pricePerNightCents)} KZT
                   </option>
                 ))}
               </select>

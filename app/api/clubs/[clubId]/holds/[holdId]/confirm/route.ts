@@ -33,6 +33,7 @@ import { consumePromotionRedemptionForBooking, getPromoDiscountFromBreakdown } f
 import { PERMISSIONS } from '@/src/lib/rbac'
 import { normalizeCustomerPhone, resolveOrCreateCustomerForBooking } from '@/src/lib/customerManagement'
 import { consumeMembershipForBooking, MembershipFlowError } from '@/src/lib/membershipService'
+import { resolveOrCreateOperationalRoom } from '@/src/lib/operationalRoom'
 
 export const dynamic = 'force-dynamic'
 
@@ -392,52 +393,15 @@ export async function POST(request: NextRequest, routeContext: RouteContext) {
         )
       }
 
-      let room = null as { id: number; clubId: string | null; segmentId: string | null } | null
-      if (body.roomId && Number.isInteger(body.roomId) && body.roomId > 0) {
-        room = await tx.room.findFirst({
-          where: {
-            id: body.roomId,
-            clubId,
-          },
-          select: {
-            id: true,
-            clubId: true,
-            segmentId: true,
-          },
-        })
-      }
-      if (!room) {
-        room = await tx.room.findFirst({
-          where: {
-            clubId,
-            segmentId: seat.segmentId,
-          },
-          orderBy: { id: 'asc' },
-          select: {
-            id: true,
-            clubId: true,
-            segmentId: true,
-          },
-        })
-      }
-      if (!room) {
-        room = await tx.room.findFirst({
-          where: { clubId },
-          orderBy: { id: 'asc' },
-          select: {
-            id: true,
-            clubId: true,
-            segmentId: true,
-          },
-        })
-      }
-      if (!room) {
-        throw new ConfirmError(
-          'VALIDATION_ERROR',
-          409,
-          'No operational room exists in this club for booking confirmation.',
-        )
-      }
+      const room = await resolveOrCreateOperationalRoom({
+        tx,
+        clubId,
+        preferredRoomId:
+          body.roomId && Number.isInteger(body.roomId) && body.roomId > 0
+            ? body.roomId
+            : null,
+        seatSegmentId: seat.segmentId,
+      })
 
       const guests = Number.isInteger(body.guests) && (body.guests as number) > 0 ? (body.guests as number) : 1
       const guestName = body.guestName || context.profile.name || 'Guest'

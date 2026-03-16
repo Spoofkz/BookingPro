@@ -1,3 +1,4 @@
+import { MembershipStatus, Role } from '@prisma/client'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import {
@@ -6,8 +7,59 @@ import {
   getClientIpFromHeaders,
   verifyOtpCode,
 } from '@/src/lib/authSession'
+import {
+  ACTIVE_CLUB_COOKIE,
+  ACTIVE_MODE_COOKIE,
+  ACTIVE_ROLE_COOKIE,
+  DEMO_USER_COOKIE,
+} from '@/src/lib/cabinetContext'
+import { prisma } from '@/src/lib/prisma'
 
 export const dynamic = 'force-dynamic'
+
+const CONTEXT_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30
+
+async function applyDefaultModeCookies(cookieStore: Awaited<ReturnType<typeof cookies>>, userId: string) {
+  const activeStaffMembership = await prisma.clubMembership.findFirst({
+    where: {
+      userId,
+      status: MembershipStatus.ACTIVE,
+      role: { not: Role.CLIENT },
+    },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      clubId: true,
+    },
+  })
+
+  if (activeStaffMembership) {
+    cookieStore.set(ACTIVE_MODE_COOKIE, 'STAFF', {
+      path: '/',
+      sameSite: 'lax',
+      maxAge: CONTEXT_COOKIE_MAX_AGE_SECONDS,
+    })
+    cookieStore.set(ACTIVE_CLUB_COOKIE, activeStaffMembership.clubId, {
+      path: '/',
+      sameSite: 'lax',
+      maxAge: CONTEXT_COOKIE_MAX_AGE_SECONDS,
+    })
+    cookieStore.delete(ACTIVE_ROLE_COOKIE)
+  } else {
+    cookieStore.set(ACTIVE_MODE_COOKIE, 'CLIENT', {
+      path: '/',
+      sameSite: 'lax',
+      maxAge: CONTEXT_COOKIE_MAX_AGE_SECONDS,
+    })
+    cookieStore.set(ACTIVE_ROLE_COOKIE, Role.CLIENT, {
+      path: '/',
+      sameSite: 'lax',
+      maxAge: CONTEXT_COOKIE_MAX_AGE_SECONDS,
+    })
+    cookieStore.delete(ACTIVE_CLUB_COOKIE)
+  }
+
+  cookieStore.delete(DEMO_USER_COOKIE)
+}
 
 type Payload = {
   phone?: string
@@ -42,6 +94,7 @@ export async function POST(request: NextRequest) {
       sameSite: 'lax',
       expires: result.expiresAt,
     })
+    await applyDefaultModeCookies(cookieStore, result.userId)
 
     return NextResponse.json({
       sessionId: result.sessionId,

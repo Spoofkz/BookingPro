@@ -2,6 +2,9 @@
 
 import { Role } from '@prisma/client'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
+import AccountSettingsSection from '@/src/components/account/AccountSettingsSection'
+import FinanceAnalyticsSection from '@/src/components/cabinet/FinanceAnalyticsSection'
+import FinanceInvoicesSection from '@/src/components/cabinet/FinanceInvoicesSection'
 import OnboardingSection from '@/src/components/cabinet/OnboardingSection'
 import SimpleSeatMapEditor from '@/src/components/cabinet/SimpleSeatMapEditor'
 
@@ -497,6 +500,15 @@ function warningsFromPayload(payload: unknown) {
     : []
 }
 
+function formatMoney(amountKzt: number, _currency: string) {
+  const rounded = Math.max(0, Math.trunc(amountKzt))
+  try {
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(rounded)} KZT`
+  } catch {
+    return `${rounded} KZT`
+  }
+}
+
 async function readJsonOrThrow<T>(response: Response, fallbackError: string) {
   const payload = (await response.json()) as T | unknown
   if (!response.ok) {
@@ -885,8 +897,11 @@ export default function TechSection({ section }: { section: string }) {
     'pricing',
     'schedule',
     'staff',
+    'finance',
+    'payments',
     'policies',
     'audit',
+    'account',
   ])
   const [activeClubId, setActiveClubId] = useState<string | null>(null)
   const [rooms, setRooms] = useState<Room[]>([])
@@ -896,6 +911,8 @@ export default function TechSection({ section }: { section: string }) {
   const [selectedPricingDraftId, setSelectedPricingDraftId] = useState('')
   const [selectedPricingVersionDetail, setSelectedPricingVersionDetail] = useState<PricingVersionDetail | null>(null)
   const [segmentBaseRates, setSegmentBaseRates] = useState<Record<string, string>>({})
+  const [segmentForm, setSegmentForm] = useState({ name: '' })
+  const [segmentBusy, setSegmentBusy] = useState(false)
   const [bookingsCount, setBookingsCount] = useState(0)
   const [quoteResult, setQuoteResult] = useState<QuoteResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1388,6 +1405,10 @@ export default function TechSection({ section }: { section: string }) {
     () => pricingVersions.filter((version) => version.status === 'DRAFT'),
     [pricingVersions],
   )
+  const latestPublishedPricingVersion = useMemo(
+    () => pricingVersions.find((version) => version.status === 'PUBLISHED') ?? null,
+    [pricingVersions],
+  )
   const selectedPricingDraftVersion = useMemo(
     () => draftPricingVersions.find((version) => version.id === selectedPricingDraftId) ?? null,
     [draftPricingVersions, selectedPricingDraftId],
@@ -1417,6 +1438,95 @@ export default function TechSection({ section }: { section: string }) {
     }
   }, [parsedMapPreview.document?.floors, previewFloorId])
 
+  async function handleCreateSegment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!activeClubId) return
+    const name = segmentForm.name.trim()
+    if (!name) {
+      setPricingMessage('Segment name is required.')
+      return
+    }
+
+    setSegmentBusy(true)
+    setPricingMessage(null)
+    try {
+      const response = await fetch(`/api/clubs/${activeClubId}/segments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, isActive: true }),
+      })
+      const payload = (await response.json()) as unknown
+      if (!response.ok) {
+        throw new Error(errorMessageFromPayload(payload, 'Failed to create segment.'))
+      }
+      setSegmentForm({ name: '' })
+      setPricingMessage(`Segment "${name}" created.`)
+      await loadPricingData(activeClubId)
+    } catch (error) {
+      setPricingMessage(error instanceof Error ? error.message : 'Failed to create segment.')
+    } finally {
+      setSegmentBusy(false)
+    }
+  }
+
+  async function handleCreateDefaultSegments() {
+    if (!activeClubId) return
+    const defaults = ['Standard', 'Bootcamp', 'VIP']
+    const existing = new Set(segments.map((segment) => segment.name.trim().toLowerCase()))
+    const missing = defaults.filter((name) => !existing.has(name.toLowerCase()))
+    if (missing.length === 0) {
+      setPricingMessage('Default segments already exist.')
+      return
+    }
+
+    setSegmentBusy(true)
+    setPricingMessage(null)
+    try {
+      for (const name of missing) {
+        const response = await fetch(`/api/clubs/${activeClubId}/segments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, isActive: true }),
+        })
+        if (!response.ok && response.status !== 409) {
+          const payload = (await response.json()) as unknown
+          throw new Error(errorMessageFromPayload(payload, `Failed to create segment "${name}".`))
+        }
+      }
+      setPricingMessage(`Added default segments: ${missing.join(', ')}.`)
+      await loadPricingData(activeClubId)
+    } catch (error) {
+      setPricingMessage(error instanceof Error ? error.message : 'Failed to create default segments.')
+    } finally {
+      setSegmentBusy(false)
+    }
+  }
+
+  async function handleToggleSegment(segment: Segment) {
+    if (!activeClubId) return
+    setSegmentBusy(true)
+    setPricingMessage(null)
+    try {
+      const response = await fetch(`/api/segments/${segment.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !segment.isActive }),
+      })
+      const payload = (await response.json()) as unknown
+      if (!response.ok) {
+        throw new Error(errorMessageFromPayload(payload, 'Failed to update segment.'))
+      }
+      setPricingMessage(
+        `Segment "${segment.name}" ${segment.isActive ? 'deactivated' : 'activated'}.`,
+      )
+      await loadPricingData(activeClubId)
+    } catch (error) {
+      setPricingMessage(error instanceof Error ? error.message : 'Failed to update segment.')
+    } finally {
+      setSegmentBusy(false)
+    }
+  }
+
   async function handleCreateDraftVersion() {
     if (!activeClubId) return
     setPricingLoading(true)
@@ -1436,6 +1546,72 @@ export default function TechSection({ section }: { section: string }) {
       await loadPricingData(activeClubId)
     } catch (error) {
       setPricingMessage(error instanceof Error ? error.message : 'Failed to create draft.')
+    } finally {
+      setPricingLoading(false)
+    }
+  }
+
+  async function handleCreateDraftFromPublished() {
+    if (!activeClubId) return
+    setPricingLoading(true)
+    setPricingMessage(null)
+    setPricingValidation(null)
+    try {
+      const createResponse = await fetch(`/api/clubs/${activeClubId}/pricing/versions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const createPayload = (await createResponse.json()) as {
+        id?: string
+        error?: string
+      }
+      if (!createResponse.ok || !createPayload.id) {
+        throw new Error(createPayload.error || 'Failed to create draft pricing version.')
+      }
+      const newDraftId = createPayload.id
+
+      if (latestPublishedPricingVersion) {
+        const publishedDetailResponse = await fetch(
+          `/api/clubs/${activeClubId}/pricing/versions/${latestPublishedPricingVersion.id}`,
+          { cache: 'no-store' },
+        )
+        const publishedDetailPayload = (await publishedDetailResponse.json()) as
+          | PricingVersionDetail
+          | { error?: string }
+        if (!publishedDetailResponse.ok) {
+          throw new Error(
+            (publishedDetailPayload as { error?: string }).error ||
+              'Failed to load published pricing rules.',
+          )
+        }
+        const publishedDetail = publishedDetailPayload as PricingVersionDetail
+
+        const cloneResponse = await fetch(`/api/pricing/versions/${newDraftId}/rules`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rules: (publishedDetail.rules || []).map(pricingRuleRecordToInput),
+          }),
+        })
+        const clonePayload = (await cloneResponse.json()) as { error?: string; details?: string[] }
+        if (!cloneResponse.ok) {
+          throw new Error(clonePayload.error || clonePayload.details?.[0] || 'Failed to clone pricing rules.')
+        }
+      }
+
+      await loadPricingData(activeClubId)
+      setSelectedPricingDraftId(newDraftId)
+      await loadPricingVersionDetail(activeClubId, newDraftId)
+      setPricingMessage(
+        latestPublishedPricingVersion
+          ? 'Draft created from published pricing version.'
+          : 'Draft pricing version created.',
+      )
+    } catch (error) {
+      setPricingMessage(
+        error instanceof Error ? error.message : 'Failed to create draft from published version.',
+      )
     } finally {
       setPricingLoading(false)
     }
@@ -1500,7 +1676,7 @@ export default function TechSection({ section }: { section: string }) {
           if (!raw) return null
           const parsed = Number(raw)
           if (!Number.isInteger(parsed) || parsed < 0) {
-            throw new Error(`Invalid rate for segment "${segment.name}". Use a non-negative integer (cents/hour).`)
+            throw new Error(`Invalid rate for segment "${segment.name}". Use a non-negative integer (KZT/hour).`)
           }
 
           const existing = (selectedPricingVersionDetail.rules || []).find(
@@ -2168,6 +2344,15 @@ export default function TechSection({ section }: { section: string }) {
     return <OnboardingSection />
   }
 
+  if (section === 'account') {
+    return (
+      <AccountSettingsSection
+        heading="Club Owner Account"
+        subtitle="Manage your login, personal info, phone/email verification, and password."
+      />
+    )
+  }
+
   if (section === 'map-editor') {
     return (
       <div className="space-y-4">
@@ -2395,6 +2580,14 @@ export default function TechSection({ section }: { section: string }) {
           >
             {pricingLoading ? 'Working...' : 'Create Draft Version'}
           </button>
+          <button
+            type="button"
+            className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-50"
+            onClick={() => void handleCreateDraftFromPublished()}
+            disabled={!activeClubId || pricingLoading || !latestPublishedPricingVersion}
+          >
+            {pricingLoading ? 'Working...' : 'Create Draft from Published'}
+          </button>
           {pricingMessage ? <span className="text-sm text-[var(--muted)]">{pricingMessage}</span> : null}
         </div>
 
@@ -2482,6 +2675,68 @@ export default function TechSection({ section }: { section: string }) {
             </div>
           </div>
 
+          <div className="space-y-2 rounded-lg border border-[var(--border)] p-3">
+            <p className="text-sm font-medium">Segments</p>
+            <div className="flex flex-wrap gap-2">
+              <form className="flex flex-1 flex-wrap gap-2" onSubmit={handleCreateSegment}>
+                <input
+                  className="panel min-w-[220px] flex-1 rounded-lg px-3 py-2 text-sm"
+                  value={segmentForm.name}
+                  onChange={(event) =>
+                    setSegmentForm((current) => ({ ...current, name: event.target.value }))
+                  }
+                  placeholder="New segment name"
+                  disabled={segmentBusy || !activeClubId}
+                />
+                <button
+                  type="submit"
+                  className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs hover:bg-white/10 disabled:opacity-50"
+                  disabled={segmentBusy || !activeClubId}
+                >
+                  {segmentBusy ? 'Saving...' : 'Add Segment'}
+                </button>
+              </form>
+              <button
+                type="button"
+                className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs hover:bg-white/10 disabled:opacity-50"
+                onClick={() => void handleCreateDefaultSegments()}
+                disabled={segmentBusy || !activeClubId}
+              >
+                Add Standard/Bootcamp/VIP
+              </button>
+            </div>
+
+            {segments.length > 0 ? (
+              <div className="space-y-2">
+                {segments.map((segment) => (
+                  <div
+                    key={segment.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{segment.name}</span>
+                      <span className="text-xs text-[var(--muted)]">
+                        {segment.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-[var(--border)] px-2 py-1 text-xs hover:bg-white/10 disabled:opacity-50"
+                      onClick={() => void handleToggleSegment(segment)}
+                      disabled={segmentBusy || !activeClubId}
+                    >
+                      {segment.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-[var(--muted)]">
+                No segments configured for this club yet.
+              </p>
+            )}
+          </div>
+
           {draftPricingVersions.length < 1 ? (
             <div className="rounded-lg border border-dashed border-[var(--border)] p-3 text-sm text-[var(--muted)]">
               Create a draft pricing version first, then set segment rates here.
@@ -2506,7 +2761,9 @@ export default function TechSection({ section }: { section: string }) {
               {!selectedPricingVersionDetail || selectedPricingVersionDetail.id !== selectedPricingDraftId ? (
                 <p className="text-sm text-[var(--muted)]">Loading pricing rules for selected draft...</p>
               ) : segments.length < 1 ? (
-                <p className="text-sm text-[var(--muted)]">No segments found yet. Publish a map with segment-tagged seats first.</p>
+                <p className="text-sm text-[var(--muted)]">
+                  No segments found yet. Create segments above, then assign them in Map Editor.
+                </p>
               ) : (
                 <>
                   <div className="grid gap-3 md:grid-cols-2">
@@ -2518,11 +2775,11 @@ export default function TechSection({ section }: { section: string }) {
                             {segment.isActive ? 'Active' : 'Inactive'}
                           </span>
                         </span>
-                        <span className="text-xs text-[var(--muted)]">Base rate per hour (cents)</span>
+                        <span className="text-xs text-[var(--muted)]">Base rate per hour (KZT). Example: 500</span>
                         <input
                           type="number"
                           min={0}
-                          step={100}
+                          step={1}
                           className="panel rounded-lg px-3 py-2"
                           value={segmentBaseRates[segment.id] ?? ''}
                           onChange={(event) =>
@@ -2531,14 +2788,14 @@ export default function TechSection({ section }: { section: string }) {
                               [segment.id]: event.target.value,
                             }))
                           }
-                          placeholder="e.g. 2000"
+                          placeholder="e.g. 500"
                         />
                         <span className="text-xs text-[var(--muted)]">
                           {(() => {
                             const raw = (segmentBaseRates[segment.id] || '').trim()
-                            const cents = Number(raw)
-                            if (!raw || !Number.isFinite(cents)) return 'Unset'
-                            return `≈ ${(cents / 100).toFixed(2)} / hour`
+                            const amount = Number(raw)
+                            if (!raw || !Number.isFinite(amount)) return 'Unset'
+                            return `≈ ${Math.trunc(amount)} KZT / hour`
                           })()}
                         </span>
                       </label>
@@ -2654,7 +2911,7 @@ export default function TechSection({ section }: { section: string }) {
         {quoteResult ? (
           <article className="panel-strong space-y-2 p-4">
             <p className="text-sm">
-              Total: <span className="font-semibold">{quoteResult.total} {quoteResult.currency}</span>
+              Total: <span className="font-semibold">{formatMoney(quoteResult.total, quoteResult.currency)}</span>
             </p>
             {quoteResult.seat ? (
               <p className="text-xs text-[var(--muted)]">
@@ -2674,7 +2931,7 @@ export default function TechSection({ section }: { section: string }) {
             <div className="space-y-1">
               {quoteResult.breakdown.map((line, index) => (
                 <p key={`${line.type}-${index}`} className="text-sm">
-                  {line.label}: {line.amount}
+                  {line.label}: {line.amount < 0 ? '-' : ''}{formatMoney(Math.abs(line.amount), quoteResult.currency)}
                 </p>
               ))}
             </div>
@@ -3216,6 +3473,34 @@ export default function TechSection({ section }: { section: string }) {
         </div>
       </div>
     )
+  }
+
+  if (section === 'payments') {
+    if (!activeClubId) {
+      return (
+        <div className="space-y-3">
+          <h2 className="text-2xl font-semibold">Payments</h2>
+          <article className="panel-strong p-4 text-sm text-[var(--muted)]">
+            Select an active club to view finance invoices and receipts.
+          </article>
+        </div>
+      )
+    }
+    return <FinanceInvoicesSection activeClubId={activeClubId} />
+  }
+
+  if (section === 'finance') {
+    if (!activeClubId) {
+      return (
+        <div className="space-y-3">
+          <h2 className="text-2xl font-semibold">Finance</h2>
+          <article className="panel-strong p-4 text-sm text-[var(--muted)]">
+            Select an active club to view owner analytics, cash shifts, liability, and forecast.
+          </article>
+        </div>
+      )
+    }
+    return <FinanceAnalyticsSection activeClubId={activeClubId} />
   }
 
   if (section === 'policies') {

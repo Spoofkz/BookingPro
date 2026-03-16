@@ -42,6 +42,10 @@ type BookingDetail = {
     endAtUtc: string
     status: string
   } | null
+  seatSegment?: {
+    segmentId: string
+    segmentName: string | null
+  } | null
   payments: Array<{
     id: number
     amountCents: number
@@ -103,17 +107,18 @@ function formatRange(startIso: string, endIso: string) {
   })} - ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
 }
 
-function formatMoney(cents: number | null, currency: string | null) {
-  if (cents == null) return 'N/A'
-  const finalCurrency = currency || 'KZT'
+function normalizeRoomName(value: string) {
+  if (/auto room/i.test(value)) return 'Operational Room'
+  return value
+}
+
+function formatMoney(amountKzt: number | null, _currency: string | null) {
+  if (amountKzt == null) return 'N/A'
+  const rounded = Math.max(0, Math.trunc(amountKzt))
   try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: finalCurrency,
-      maximumFractionDigits: 2,
-    }).format(cents / 100)
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(rounded)} KZT`
   } catch {
-    return `${(cents / 100).toFixed(2)} ${finalCurrency}`
+    return `${rounded} KZT`
   }
 }
 
@@ -334,8 +339,14 @@ export default function ClientBookingDetailsPage({ bookingId }: { bookingId: num
           </p>
           <p className="text-sm">{formatRange(detail.checkIn, detail.checkOut)}</p>
           <p className="text-sm">
-            Seat: {detail.seatLabelSnapshot || detail.seatId || 'N/A'} · Room: {detail.room.name}
+            Seat: {detail.seatLabelSnapshot || detail.seatId || 'N/A'} · Room:{' '}
+            {normalizeRoomName(detail.room.name)}
           </p>
+          {detail.seatSegment ? (
+            <p className="text-sm">
+              Segment: {detail.seatSegment.segmentName || detail.seatSegment.segmentId}
+            </p>
+          ) : null}
           <p className="text-sm">Guest: {detail.guestName}</p>
           <p className="text-sm">Contact: {detail.guestEmail}{detail.guestPhone ? ` · ${detail.guestPhone}` : ''}</p>
           {detail.notes ? <p className="text-sm text-[var(--muted)]">Notes: {detail.notes}</p> : null}
@@ -500,4 +511,3 @@ export default function ClientBookingDetailsPage({ bookingId }: { bookingId: num
     </div>
   )
 }
-

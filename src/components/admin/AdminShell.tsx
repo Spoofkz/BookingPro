@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import AccountSettingsSection from '@/src/components/account/AccountSettingsSection'
 import { MilestoneReadinessPanel } from '@/src/components/admin/MilestoneReadinessPanel'
 import { ScenarioDetailPanel } from '@/src/components/admin/ScenarioDetailPanel'
 import { ScenarioRegistryPanel } from '@/src/components/admin/ScenarioRegistryPanel'
@@ -16,6 +17,7 @@ type SectionKey =
   | 'audit'
   | 'scenarios'
   | 'readiness'
+  | 'account'
 
 type ApiPanelSectionKey = 'clubs' | 'users' | 'bookings' | 'disputes' | 'featured' | 'audit'
 
@@ -38,10 +40,36 @@ const SECTIONS: Array<{ key: SectionKey; label: string; href: string }> = [
   { key: 'scenarios', label: 'Scenarios', href: '/admin/scenarios' },
   { key: 'readiness', label: 'Readiness', href: '/admin/readiness' },
   { key: 'audit', label: 'Audit', href: '/admin/audit' },
+  { key: 'account', label: 'Account', href: '/admin/account' },
 ]
 
 function pretty(value: unknown) {
   return JSON.stringify(value, null, 2)
+}
+
+function getProfileInitials(name: string | null | undefined) {
+  if (!name) return 'U'
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+  if (parts.length === 0) return 'U'
+  return parts
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('')
+}
+
+function getProfileLoginLabel(profile: {
+  login?: string | null
+  email?: string | null
+  phone?: string | null
+} | null) {
+  if (!profile) return 'loading'
+  if (profile.login) return `@${profile.login}`
+  if (profile.email) return profile.email
+  if (profile.phone) return profile.phone
+  return 'no-login'
 }
 
 function DashboardPanel() {
@@ -187,6 +215,39 @@ export function AdminShell({
   section: SectionKey
   scenarioId?: string
 }) {
+  const [adminProfile, setAdminProfile] = useState<{
+    name?: string | null
+    login?: string | null
+    email?: string | null
+    phone?: string | null
+    avatarUrl?: string | null
+  } | null>(null)
+
+  useEffect(() => {
+    let ignore = false
+    ;(async () => {
+      try {
+        const response = await fetch('/api/admin/me', { cache: 'no-store' })
+        const payload = (await response.json()) as {
+          profile?: {
+            name?: string | null
+            login?: string | null
+            email?: string | null
+            phone?: string | null
+            avatarUrl?: string | null
+          }
+        }
+        if (!response.ok || ignore) return
+        setAdminProfile(payload.profile ?? null)
+      } catch {
+        // Keep shell usable when profile widget fails.
+      }
+    })()
+    return () => {
+      ignore = true
+    }
+  }, [])
+
   const title = useMemo(
     () => SECTIONS.find((item) => item.key === section)?.label ?? 'Admin',
     [section],
@@ -205,7 +266,43 @@ export function AdminShell({
               Platform-scoped operations. All actions are audited.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignContent: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignContent: 'flex-start', justifyContent: 'flex-end' }}>
+            <div className="panel-strong" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999 }}>
+              <span
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '999px',
+                  overflow: 'hidden',
+                  border: '1px solid var(--border)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: 'var(--bg)',
+                }}
+              >
+                {adminProfile?.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={adminProfile.avatarUrl}
+                    alt={adminProfile.name || 'Admin'}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  getProfileInitials(adminProfile?.name)
+                )}
+              </span>
+              <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2 }}>
+                  {adminProfile?.name || 'Admin user'}
+                </span>
+                <span style={{ fontSize: 11, opacity: 0.75, lineHeight: 1.2 }}>
+                  {getProfileLoginLabel(adminProfile)}
+                </span>
+              </span>
+            </div>
             {SECTIONS.map((item) => (
               <Link
                 key={item.key}
@@ -230,7 +327,16 @@ export function AdminShell({
         scenarioId ? <ScenarioDetailPanel scenarioId={scenarioId} /> : <ScenarioRegistryPanel />
       ) : null}
       {section === 'readiness' ? <MilestoneReadinessPanel /> : null}
-      {section !== 'dashboard' && section !== 'scenarios' && section !== 'readiness' ? (
+      {section === 'account' ? (
+        <AccountSettingsSection
+          heading="System Owner Account"
+          subtitle="Manage your login, personal info, phone/email verification, and password."
+        />
+      ) : null}
+      {section !== 'dashboard' &&
+      section !== 'scenarios' &&
+      section !== 'readiness' &&
+      section !== 'account' ? (
         <DataPanel section={section} />
       ) : null}
     </div>

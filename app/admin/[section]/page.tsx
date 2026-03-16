@@ -10,6 +10,7 @@ const ALLOWED_SECTIONS = new Set([
   'audit',
   'scenarios',
   'readiness',
+  'account',
 ])
 
 type AdminSection =
@@ -21,6 +22,7 @@ type AdminSection =
   | 'audit'
   | 'scenarios'
   | 'readiness'
+  | 'account'
 
 type PageProps = {
   params: Promise<{ section: string }>

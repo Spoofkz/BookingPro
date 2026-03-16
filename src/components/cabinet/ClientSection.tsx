@@ -8,13 +8,21 @@ type Booking = {
   guestName: string
   guestEmail: string
   guestPhone?: string | null
+  seatId: string | null
+  seatLabelSnapshot: string | null
   checkIn: string
   checkOut: string
   status: string
   paymentStatus: string
+  priceTotalCents: number | null
+  priceCurrency: string | null
   notes: string | null
   createdAt?: string
   updatedAt?: string
+  seatSegment?: {
+    segmentId: string
+    segmentName: string | null
+  } | null
   room: {
     name: string
   }
@@ -34,8 +42,14 @@ type BookingDetail = {
   guestEmail: string
   guestPhone: string | null
   seatLabelSnapshot: string | null
+  seatSegment?: {
+    segmentId: string
+    segmentName: string | null
+  } | null
   checkIn: string
   checkOut: string
+  priceTotalCents: number | null
+  priceCurrency: string | null
   notes: string | null
   room: {
     name: string
@@ -218,21 +232,23 @@ function formatDateTime(value: string) {
   return new Date(value).toLocaleString()
 }
 
+function normalizeRoomName(value: string) {
+  if (/auto room/i.test(value)) return 'Operational Room'
+  return value
+}
+
 function bookingBucket(booking: Booking) {
   if (booking.status === 'CANCELED') return 'cancelled'
   if (new Date(booking.checkOut) < new Date()) return 'past'
   return 'upcoming'
 }
 
-function formatMoney(cents: number, currency: string) {
+function formatMoney(amountKzt: number, _currency: string) {
+  const rounded = Math.max(0, Math.trunc(amountKzt))
   try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      maximumFractionDigits: 2,
-    }).format(cents / 100)
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(rounded)} KZT`
   } catch {
-    return `${(cents / 100).toFixed(2)} ${currency}`
+    return `${rounded} KZT`
   }
 }
 
@@ -950,7 +966,7 @@ export default function ClientSection({ section }: { section: string }) {
         type: 'PAYMENT',
         at: payment.createdAt,
         title: `Payment ${payment.status}`,
-        detail: `${(payment.amountCents / 100).toFixed(2)} via ${payment.method} · booking #${payment.bookingId}`,
+        detail: `${Math.trunc(payment.amountCents)} KZT via ${payment.method} · booking #${payment.bookingId}`,
       })
     }
 
@@ -1113,14 +1129,24 @@ export default function ClientSection({ section }: { section: string }) {
                 return (
                   <article key={booking.id} className="panel-strong space-y-2 p-3">
                     <p className="font-medium">
-                      {booking.room.name} · Booking #{booking.id}
+                      {booking.club?.name || 'Club'} · Booking #{booking.id}
                     </p>
                     <p className="text-sm text-[var(--muted)]">
                       {formatDateRange(booking.checkIn, booking.checkOut)}
                     </p>
+                    <p className="text-xs text-[var(--muted)]">
+                      Seat: {booking.seatLabelSnapshot || booking.seatId || 'N/A'} · Type:{' '}
+                      {booking.seatSegment?.segmentName || booking.seatSegment?.segmentId || 'N/A'} · Room:{' '}
+                      {normalizeRoomName(booking.room.name)}
+                    </p>
                     <p className="text-xs">
                       Status: {booking.status} · Payment: {booking.paymentStatus}
                     </p>
+                    {typeof booking.priceTotalCents === 'number' ? (
+                      <p className="text-xs text-[var(--muted)]">
+                        Total: {formatMoney(booking.priceTotalCents, booking.priceCurrency || 'KZT')}
+                      </p>
+                    ) : null}
                     {booking.notes ? (
                       <p className="text-xs text-[var(--muted)]">Notes: {booking.notes}</p>
                     ) : null}
@@ -1158,14 +1184,21 @@ export default function ClientSection({ section }: { section: string }) {
                       <article className="rounded-lg border border-[var(--border)] bg-black/10 p-3 text-xs">
                         <p>Guest: {detail.guestName} ({detail.guestEmail})</p>
                         <p>Seat: {detail.seatLabelSnapshot || 'N/A'}</p>
+                        <p>Seat type: {detail.seatSegment?.segmentName || detail.seatSegment?.segmentId || 'N/A'}</p>
+                        <p>Room: {normalizeRoomName(detail.room.name)}</p>
                         <p>
                           Slot: {detail.slot ? `${new Date(detail.slot.startAtUtc).toLocaleString()} - ${new Date(detail.slot.endAtUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Legacy booking'}
                         </p>
+                        {typeof detail.priceTotalCents === 'number' ? (
+                          <p>
+                            Total: {formatMoney(detail.priceTotalCents, detail.priceCurrency || 'KZT')}
+                          </p>
+                        ) : null}
                         <p>
                           Payments: {detail.payments.length === 0
                             ? 'none'
                             : detail.payments
-                                .map((item) => `${(item.amountCents / 100).toFixed(2)} (${item.status})`)
+                                .map((item) => `${Math.trunc(item.amountCents)} KZT (${item.status})`)
                                 .join(', ')}
                         </p>
                       </article>
@@ -1189,7 +1222,11 @@ export default function ClientSection({ section }: { section: string }) {
       <div className="space-y-3">
         <h2 className="text-2xl font-semibold">Payments & Receipts</h2>
         <p className="text-sm">
-          Total paid: <span className="font-semibold">{(totalPaidCents / 100).toFixed(2)}</span>
+          Total paid:{' '}
+          <span className="font-semibold">
+            {new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(Math.trunc(totalPaidCents))}
+          </span>{' '}
+          KZT
         </p>
         {payments.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">No payments yet.</p>
@@ -1197,7 +1234,7 @@ export default function ClientSection({ section }: { section: string }) {
           payments.map((payment) => (
             <article key={payment.id} className="panel-strong p-3 text-sm">
               <p>
-                ${(payment.amountCents / 100).toFixed(2)} · {payment.method} · {payment.status}
+                {Math.trunc(payment.amountCents)} KZT · {payment.method} · {payment.status}
               </p>
               <p className="text-xs text-[var(--muted)]">
                 Booking #{payment.bookingId} · {new Date(payment.createdAt).toLocaleString()}

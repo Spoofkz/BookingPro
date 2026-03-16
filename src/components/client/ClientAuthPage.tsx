@@ -17,6 +17,7 @@ type OtpSendPayload = {
 type MeContextPayload = {
   activeMode?: 'CLIENT' | 'STAFF'
   activeRole?: 'CLIENT' | 'HOST_ADMIN' | 'TECH_ADMIN'
+  staffMembershipsCount?: number
 }
 
 const AUTH_REQUEST_TIMEOUT_MS = 15000
@@ -207,6 +208,34 @@ export default function ClientAuthPage() {
       await redirectAfterAuth('/me/profile')
     } catch (loginError) {
       setError(loginError instanceof Error ? loginError.message : 'Failed to login.')
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  async function openStaffCabinet() {
+    setActionBusy(true)
+    setError(null)
+    setMessage(null)
+    try {
+      const context = await fetchJsonWithTimeout<MeContextPayload>('/api/me/context', {
+        cache: 'no-store',
+      })
+
+      if ((context.staffMembershipsCount || 0) < 1) {
+        setError('No active staff membership found for this account.')
+        return
+      }
+
+      await fetchJsonWithTimeout<ErrorPayload>('/api/me/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activeMode: 'STAFF' }),
+      })
+
+      router.push('/cabinet')
+    } catch (staffError) {
+      setError(staffError instanceof Error ? staffError.message : 'Failed to open staff cabinet.')
     } finally {
       setActionBusy(false)
     }
@@ -456,9 +485,14 @@ export default function ClientAuthPage() {
             <Link href="/bookings" className="rounded-lg border border-[var(--border)] px-3 py-1 hover:bg-white/10">
               Open Booking Page
             </Link>
-            <Link href="/cabinet" className="rounded-lg border border-[var(--border)] px-3 py-1 hover:bg-white/10">
+            <button
+              type="button"
+              className="rounded-lg border border-[var(--border)] px-3 py-1 hover:bg-white/10 disabled:opacity-50"
+              onClick={() => void openStaffCabinet()}
+              disabled={actionBusy || sendBusy}
+            >
               Open Staff Cabinet
-            </Link>
+            </button>
           </div>
         </article>
       </section>

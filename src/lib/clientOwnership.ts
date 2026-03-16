@@ -34,7 +34,16 @@ export async function requireOwnedBooking(params: {
   const booking = await prisma.booking.findUnique({
     where: { id: params.bookingId },
     include: {
-      room: true,
+      room: {
+        include: {
+          segment: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
       slot: true,
       club: {
         select: {

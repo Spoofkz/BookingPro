@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import AccountSettingsSection from '@/src/components/account/AccountSettingsSection'
+import FinanceInvoicesSection from '@/src/components/cabinet/FinanceInvoicesSection'
 import HostCustomersSection from '@/src/components/cabinet/HostCustomersSection'
 
 type Booking = {
@@ -10,18 +12,15 @@ type Booking = {
   guestEmail: string
   status: string
   paymentStatus: string
+  slotId: string | null
+  seatId: string | null
+  seatLabelSnapshot: string | null
   checkIn: string
   checkOut: string
   room: {
     id: number
     name: string
   }
-}
-
-type Room = {
-  id: number
-  name: string
-  capacity: number
 }
 
 type PaymentItem = {
@@ -105,6 +104,10 @@ type BookingFilters = {
   query: string
 }
 
+type BookingScope = 'CURRENT_UPCOMING' | 'TODAY' | 'ALL'
+
+const ACTIVE_BOOKING_STATUSES = new Set(['HELD', 'PENDING', 'CONFIRMED', 'CHECKED_IN'])
+
 function todayDateInput() {
   const now = new Date()
   const year = now.getFullYear()
@@ -166,10 +169,10 @@ export default function HostSection({ section }: { section: string }) {
     'customers',
     'payments',
     'support',
+    'account',
   ])
   const [activeClubId, setActiveClubId] = useState<string | null>(null)
   const [bookings, setBookings] = useState<Booking[]>([])
-  const [rooms, setRooms] = useState<Room[]>([])
   const [payments, setPayments] = useState<PaymentItem[]>([])
   const [slotDate, setSlotDate] = useState(todayDateInput())
   const [slots, setSlots] = useState<SlotItem[]>([])
@@ -181,10 +184,12 @@ export default function HostSection({ section }: { section: string }) {
   const [availabilityBusy, setAvailabilityBusy] = useState(false)
   const [filters, setFilters] = useState<BookingFilters>({
     status: '',
-    date: todayDateInput(),
+    date: '',
     query: '',
   })
-  const [moveRoomByBooking, setMoveRoomByBooking] = useState<Record<number, string>>({})
+  const [bookingScope, setBookingScope] = useState<BookingScope>('CURRENT_UPCOMING')
+  const [seatMoveBookingId, setSeatMoveBookingId] = useState<string>('')
+  const [seatMoveTargetSeatId, setSeatMoveTargetSeatId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -309,7 +314,6 @@ export default function HostSection({ section }: { section: string }) {
     setActiveClubId(me.activeClubId)
     if (!me.activeClubId) {
       setBookings([])
-      setRooms([])
       setPayments([])
       setSlots([])
       setSelectedSlotId('')
@@ -320,12 +324,8 @@ export default function HostSection({ section }: { section: string }) {
       return
     }
 
-    const [bookingsResponse, roomsResponse, paymentsResponse] = await Promise.all([
+    const [bookingsResponse, paymentsResponse] = await Promise.all([
       fetch('/api/bookings?scope=club&pageSize=200', {
-        cache: 'no-store',
-        headers: { 'X-Club-Id': me.activeClubId },
-      }),
-      fetch('/api/rooms', {
         cache: 'no-store',
         headers: { 'X-Club-Id': me.activeClubId },
       }),
@@ -339,14 +339,12 @@ export default function HostSection({ section }: { section: string }) {
       bookingsResponse,
       'Failed to load bookings.',
     )
-    const roomData = await readJson<Room[]>(roomsResponse, 'Failed to load rooms.')
     const paymentData = await readJson<{ items: PaymentItem[] }>(
       paymentsResponse,
       'Failed to load payments.',
     )
 
     setBookings(bookingData.items)
-    setRooms(roomData)
     setPayments(paymentData.items)
     await Promise.all([
       loadPublishedSeats(me.activeClubId),
@@ -452,11 +450,41 @@ export default function HostSection({ section }: { section: string }) {
     }
   }
 
+  async function handleLiveSeatMove() {
+    const bookingId = Number(seatMoveBookingId)
+    if (!Number.isInteger(bookingId) || bookingId < 1) {
+      setError('Select source booking before moving seat.')
+      return
+    }
+    if (!seatMoveTargetSeatId) {
+      setError('Select target seat before moving booking.')
+      return
+    }
+    await runBookingAction(bookingId, 'move_seat', {
+      newSeatId: seatMoveTargetSeatId,
+    })
+    if (activeClubId && selectedSlotId && selectedFloorId) {
+      await loadFloorAvailability(activeClubId, selectedSlotId, selectedFloorId)
+    }
+  }
+
   const filteredBookings = useMemo(() => {
-    return bookings.filter((booking) => {
+    const nowMs = Date.now()
+    const today = todayDateInput()
+    const items = bookings.filter((booking) => {
+      const checkOutMs = new Date(booking.checkOut).getTime()
+      const bookingDate = new Date(booking.checkIn).toISOString().slice(0, 10)
+
+      if (bookingScope === 'CURRENT_UPCOMING') {
+        if (!ACTIVE_BOOKING_STATUSES.has(booking.status)) return false
+        if (checkOutMs < nowMs - 15 * 60 * 1000) return false
+      } else if (bookingScope === 'TODAY') {
+        if (bookingDate !== today) return false
+        if (booking.status === 'COMPLETED' || booking.status === 'CANCELED') return false
+      }
+
       if (filters.status && booking.status !== filters.status) return false
       if (filters.date) {
-        const bookingDate = new Date(booking.checkIn).toISOString().slice(0, 10)
         if (bookingDate !== filters.date) return false
       }
       if (filters.query.trim()) {
@@ -466,7 +494,29 @@ export default function HostSection({ section }: { section: string }) {
       }
       return true
     })
-  }, [bookings, filters.date, filters.query, filters.status])
+    items.sort((left, right) => {
+      const leftStart = new Date(left.checkIn).getTime()
+      const rightStart = new Date(right.checkIn).getTime()
+      return leftStart - rightStart
+    })
+    return items
+  }, [bookingScope, bookings, filters.date, filters.query, filters.status])
+
+  const bookingScopeCounts = useMemo(() => {
+    const nowMs = Date.now()
+    const today = todayDateInput()
+    return {
+      currentUpcoming: bookings.filter((booking) => {
+        if (!ACTIVE_BOOKING_STATUSES.has(booking.status)) return false
+        return new Date(booking.checkOut).getTime() >= nowMs - 15 * 60 * 1000
+      }).length,
+      today: bookings.filter((booking) => {
+        const bookingDate = new Date(booking.checkIn).toISOString().slice(0, 10)
+        return bookingDate === today && booking.status !== 'COMPLETED' && booking.status !== 'CANCELED'
+      }).length,
+      all: bookings.length,
+    }
+  }, [bookings])
 
   const metrics = useMemo(() => {
     const today = todayDateInput()
@@ -513,6 +563,71 @@ export default function HostSection({ section }: { section: string }) {
       .sort((a, b) => a.label.localeCompare(b.label))
   }, [availabilitySeats, floorSeatsById])
 
+  const bookingById = useMemo(
+    () => new Map(bookings.map((booking) => [booking.id, booking])),
+    [bookings],
+  )
+
+  const movableBookingsForSlot = useMemo(() => {
+    const rows = liveRows
+      .filter((seat) => seat.status === 'BOOKED' && typeof seat.bookingId === 'number')
+      .map((seat) => {
+        const booking = bookingById.get(seat.bookingId as number)
+        if (!booking) return null
+        if (!['CONFIRMED', 'CHECKED_IN'].includes(booking.status)) return null
+        return {
+          bookingId: booking.id,
+          seatId: seat.seatId,
+          seatLabel: seat.label,
+          booking,
+        }
+      })
+      .filter(
+        (
+          value,
+        ): value is {
+          bookingId: number
+          seatId: string
+          seatLabel: string
+          booking: Booking
+        } => Boolean(value),
+      )
+      .sort((left, right) => left.booking.checkIn.localeCompare(right.booking.checkIn))
+
+    return Array.from(new Map(rows.map((item) => [item.bookingId, item])).values())
+  }, [bookingById, liveRows])
+
+  const targetSeatOptions = useMemo(
+    () => liveRows.filter((seat) => seat.status === 'AVAILABLE'),
+    [liveRows],
+  )
+
+  const selectedSourceBooking = useMemo(
+    () =>
+      movableBookingsForSlot.find(
+        (item) => String(item.bookingId) === seatMoveBookingId,
+      ) ?? null,
+    [movableBookingsForSlot, seatMoveBookingId],
+  )
+
+  useEffect(() => {
+    if (!seatMoveBookingId) return
+    const exists = movableBookingsForSlot.some(
+      (item) => String(item.bookingId) === seatMoveBookingId,
+    )
+    if (!exists) {
+      setSeatMoveBookingId('')
+    }
+  }, [movableBookingsForSlot, seatMoveBookingId])
+
+  useEffect(() => {
+    if (!seatMoveTargetSeatId) return
+    const exists = targetSeatOptions.some((seat) => seat.seatId === seatMoveTargetSeatId)
+    if (!exists) {
+      setSeatMoveTargetSeatId('')
+    }
+  }, [seatMoveTargetSeatId, targetSeatOptions])
+
   const availabilityBySeatId = useMemo(
     () => new Map(availabilitySeats.map((seat) => [seat.seatId, seat])),
     [availabilitySeats],
@@ -556,7 +671,7 @@ export default function HostSection({ section }: { section: string }) {
     return <p className="text-sm text-[var(--muted)]">Loading host operations...</p>
   }
 
-  if (!activeClubId) {
+  if (!activeClubId && section !== 'account') {
     return (
       <div className="space-y-3">
         <h2 className="text-2xl font-semibold">Host Cabinet</h2>
@@ -596,11 +711,55 @@ export default function HostSection({ section }: { section: string }) {
     )
   }
 
+  if (section === 'account') {
+    return (
+      <AccountSettingsSection
+        heading="Host Account"
+        subtitle="Manage your login, personal info, phone/email verification, and password."
+      />
+    )
+  }
+
   if (section === 'bookings') {
     return (
       <div className="space-y-4">
         <h2 className="text-2xl font-semibold">Bookings</h2>
         {message ? <p className="text-sm text-emerald-700 dark:text-emerald-300">{message}</p> : null}
+        <div className="flex flex-wrap gap-2 text-xs">
+          <button
+            type="button"
+            className={`rounded-lg border px-3 py-1 ${
+              bookingScope === 'CURRENT_UPCOMING'
+                ? 'border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_16%,transparent)]'
+                : 'border-[var(--border)] hover:bg-white/10'
+            }`}
+            onClick={() => setBookingScope('CURRENT_UPCOMING')}
+          >
+            Current & Upcoming ({bookingScopeCounts.currentUpcoming})
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg border px-3 py-1 ${
+              bookingScope === 'TODAY'
+                ? 'border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_16%,transparent)]'
+                : 'border-[var(--border)] hover:bg-white/10'
+            }`}
+            onClick={() => setBookingScope('TODAY')}
+          >
+            Today ({bookingScopeCounts.today})
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg border px-3 py-1 ${
+              bookingScope === 'ALL'
+                ? 'border-[var(--accent)] bg-[color-mix(in_oklab,var(--accent)_16%,transparent)]'
+                : 'border-[var(--border)] hover:bg-white/10'
+            }`}
+            onClick={() => setBookingScope('ALL')}
+          >
+            All ({bookingScopeCounts.all})
+          </button>
+        </div>
         <div className="grid gap-3 md:grid-cols-3">
           <label className="flex flex-col gap-1 text-sm">
             Date
@@ -645,12 +804,41 @@ export default function HostSection({ section }: { section: string }) {
           </label>
         </div>
 
+        <div className="flex flex-wrap gap-2 text-xs">
+          <button
+            type="button"
+            className="rounded-lg border border-[var(--border)] px-3 py-1 hover:bg-white/10"
+            onClick={() =>
+              setFilters((current) => ({
+                ...current,
+                date: todayDateInput(),
+              }))
+            }
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-[var(--border)] px-3 py-1 hover:bg-white/10"
+            onClick={() =>
+              setFilters((current) => ({
+                ...current,
+                date: '',
+              }))
+            }
+          >
+            All dates
+          </button>
+          <span className="rounded-lg border border-[var(--border)] px-3 py-1 text-[var(--muted)]">
+            Showing {filteredBookings.length} / {bookings.length}
+          </span>
+        </div>
+
         {filteredBookings.length === 0 ? (
           <p className="text-sm text-[var(--muted)]">No bookings match current filters.</p>
         ) : (
           <div className="space-y-3">
             {filteredBookings.map((booking) => {
-              const moveTarget = moveRoomByBooking[booking.id] || String(booking.room.id)
               return (
                 <article key={booking.id} className="panel-strong space-y-2 p-3 text-sm">
                   <p className="font-medium">
@@ -696,37 +884,9 @@ export default function HostSection({ section }: { section: string }) {
                     >
                       Mark paid
                     </button>
-                    <label className="flex items-center gap-1 text-xs">
-                      Move to
-                      <select
-                        className="panel rounded px-1 py-1"
-                        value={moveTarget}
-                        onChange={(event) =>
-                          setMoveRoomByBooking((current) => ({
-                            ...current,
-                            [booking.id]: event.target.value,
-                          }))
-                        }
-                      >
-                        {rooms.map((room) => (
-                          <option key={room.id} value={room.id}>
-                            {room.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button
-                      type="button"
-                      className="rounded-lg border border-[var(--border)] px-2 py-1 text-xs hover:bg-white/10 disabled:opacity-50"
-                      disabled={busyBookingId === booking.id}
-                      onClick={() =>
-                        void runBookingAction(booking.id, 'move_seat', {
-                          roomId: Number(moveTarget),
-                        })
-                      }
-                    >
-                      Move seat
-                    </button>
+                    <span className="rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--muted)]">
+                      Seat move is handled in Live Map (seat-to-seat only).
+                    </span>
                   </div>
                 </article>
               )
@@ -837,6 +997,64 @@ export default function HostSection({ section }: { section: string }) {
             </div>
 
             <article className="panel-strong space-y-3 p-4">
+              <div>
+                <h3 className="text-sm font-semibold">Seat Move Tool</h3>
+                <p className="text-xs text-[var(--muted)]">
+                  Seat move is now seat-to-seat only. Select a booked source and an available target seat.
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="flex flex-col gap-1 text-sm">
+                  Source Booking
+                  <select
+                    className="panel rounded-lg px-3 py-2"
+                    value={seatMoveBookingId}
+                    onChange={(event) => setSeatMoveBookingId(event.target.value)}
+                  >
+                    <option value="">Select booking</option>
+                    {movableBookingsForSlot.map((item) => (
+                      <option key={item.bookingId} value={item.bookingId}>
+                        #{item.bookingId} · {item.seatLabel} · {item.booking.guestName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  Target Seat
+                  <select
+                    className="panel rounded-lg px-3 py-2"
+                    value={seatMoveTargetSeatId}
+                    onChange={(event) => setSeatMoveTargetSeatId(event.target.value)}
+                  >
+                    <option value="">Select available seat</option>
+                    {targetSeatOptions.map((seat) => (
+                      <option key={seat.seatId} value={seat.seatId}>
+                        {seat.label} · {seat.segmentId || 'No segment'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="rounded-lg border border-[var(--border)] px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-50 self-end"
+                  disabled={
+                    !seatMoveBookingId ||
+                    !seatMoveTargetSeatId ||
+                    busyBookingId === Number(seatMoveBookingId)
+                  }
+                  onClick={() => void handleLiveSeatMove()}
+                >
+                  {busyBookingId === Number(seatMoveBookingId) ? 'Moving...' : 'Move Seat'}
+                </button>
+              </div>
+              {selectedSourceBooking ? (
+                <p className="text-xs text-[var(--muted)]">
+                  Selected source: #{selectedSourceBooking.bookingId} from seat {selectedSourceBooking.seatLabel}.
+                </p>
+              ) : null}
+            </article>
+
+            <article className="panel-strong space-y-3 p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-semibold">Visual Floor Map</h3>
@@ -920,8 +1138,34 @@ export default function HostSection({ section }: { section: string }) {
                             rx={4}
                             fill={seatStatusFill(seat.status)}
                             fillOpacity={0.8}
-                            stroke="rgba(15,23,42,0.55)"
-                            strokeWidth={1}
+                            stroke={
+                              seat.seatId === seatMoveTargetSeatId
+                                ? '#0f766e'
+                                : selectedSourceBooking?.seatId === seat.seatId
+                                  ? '#b91c1c'
+                                  : 'rgba(15,23,42,0.55)'
+                            }
+                            strokeWidth={
+                              seat.seatId === seatMoveTargetSeatId ||
+                              selectedSourceBooking?.seatId === seat.seatId
+                                ? 2
+                                : 1
+                            }
+                            onClick={() => {
+                              if (seat.status === 'AVAILABLE') {
+                                setSeatMoveTargetSeatId(seat.seatId)
+                              }
+                              if (seat.status === 'BOOKED' && typeof seat.bookingId === 'number') {
+                                setSeatMoveBookingId(String(seat.bookingId))
+                              }
+                            }}
+                            style={{
+                              cursor:
+                                seat.status === 'AVAILABLE' ||
+                                (seat.status === 'BOOKED' && typeof seat.bookingId === 'number')
+                                  ? 'pointer'
+                                  : 'default',
+                            }}
                           >
                             <title>
                               {`${seat.label} · ${seat.status}${seat.segmentId ? ` · ${seat.segmentId}` : ''}${typeof seat.bookingId === 'number' ? ` · Booking #${seat.bookingId}` : ''}`}
@@ -954,7 +1198,16 @@ export default function HostSection({ section }: { section: string }) {
             ) : (
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                 {liveRows.map((seat) => (
-                  <article key={seat.seatId} className="panel-strong rounded-lg p-3 text-sm">
+                  <article
+                    key={seat.seatId}
+                    className={`panel-strong rounded-lg p-3 text-sm ${
+                      seat.seatId === seatMoveTargetSeatId
+                        ? 'border-teal-500/60 ring-1 ring-teal-500/40'
+                        : selectedSourceBooking?.seatId === seat.seatId
+                          ? 'border-rose-500/60 ring-1 ring-rose-500/40'
+                          : ''
+                    }`}
+                  >
                     <p className="font-medium">{seat.label}</p>
                     <p className={seatStatusClass(seat.status)}>
                       {seat.status}
@@ -970,6 +1223,26 @@ export default function HostSection({ section }: { section: string }) {
                     {typeof seat.bookingId === 'number' ? (
                       <p className="text-xs text-[var(--muted)]">Booking #{seat.bookingId}</p>
                     ) : null}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {seat.status === 'AVAILABLE' ? (
+                        <button
+                          type="button"
+                          className="rounded border border-[var(--border)] px-2 py-1 text-xs hover:bg-white/10"
+                          onClick={() => setSeatMoveTargetSeatId(seat.seatId)}
+                        >
+                          Set as target
+                        </button>
+                      ) : null}
+                      {seat.status === 'BOOKED' && typeof seat.bookingId === 'number' ? (
+                        <button
+                          type="button"
+                          className="rounded border border-[var(--border)] px-2 py-1 text-xs hover:bg-white/10"
+                          onClick={() => setSeatMoveBookingId(String(seat.bookingId))}
+                        >
+                          Set as source
+                        </button>
+                      ) : null}
+                    </div>
                   </article>
                 ))}
               </div>
@@ -981,36 +1254,11 @@ export default function HostSection({ section }: { section: string }) {
   }
 
   if (section === 'customers') {
-    return <HostCustomersSection activeClubId={activeClubId} />
+    return <HostCustomersSection activeClubId={activeClubId!} />
   }
 
   if (section === 'payments') {
-    const paid = payments.filter((payment) => payment.status === 'PAID')
-    const totalPaidCents = paid.reduce((sum, payment) => sum + payment.amountCents, 0)
-
-    return (
-      <div className="space-y-3">
-        <h2 className="text-2xl font-semibold">Payments</h2>
-        <p className="text-sm">
-          Paid entries: <span className="font-semibold">{paid.length}</span> · Total{' '}
-          <span className="font-semibold">{(totalPaidCents / 100).toFixed(2)}</span>
-        </p>
-        {payments.length === 0 ? (
-          <p className="text-sm text-[var(--muted)]">No payments yet.</p>
-        ) : (
-          payments.map((payment) => (
-            <article key={payment.id} className="panel-strong p-3 text-sm">
-              <p>
-                #{payment.bookingId} · ${(payment.amountCents / 100).toFixed(2)} · {payment.status}
-              </p>
-              <p className="text-xs text-[var(--muted)]">
-                {payment.method} · {new Date(payment.createdAt).toLocaleString()}
-              </p>
-            </article>
-          ))
-        )}
-      </div>
-    )
+    return <FinanceInvoicesSection activeClubId={activeClubId!} />
   }
 
   if (section === 'support') {
@@ -1069,6 +1317,35 @@ export default function HostSection({ section }: { section: string }) {
           Open live map
         </Link>
       </div>
+
+      <article className="panel-strong space-y-3 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-lg font-semibold">Recent Club Bookings</h3>
+          <Link
+            href="/cabinet/host/bookings"
+            className="rounded-lg border border-[var(--border)] px-3 py-1 text-xs hover:bg-white/10"
+          >
+            Open full bookings
+          </Link>
+        </div>
+        {bookings.length === 0 ? (
+          <p className="text-sm text-[var(--muted)]">No bookings found for this club yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {bookings.slice(0, 8).map((booking) => (
+              <article key={booking.id} className="panel rounded-lg p-3 text-sm">
+                <p className="font-medium">
+                  #{booking.id} · {booking.room.name} · {booking.guestName}
+                </p>
+                <p className="text-xs text-[var(--muted)]">{formatDateRange(booking.checkIn, booking.checkOut)}</p>
+                <p className="text-xs text-[var(--muted)]">
+                  {booking.status} · payment {booking.paymentStatus}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
+      </article>
     </div>
   )
 }

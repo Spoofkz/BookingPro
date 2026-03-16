@@ -14,6 +14,10 @@ export default async function Layout({ children }: { children: ReactNode }) {
   return (
     <MeCabinetShell
       profileName={context.profile.name}
+      profileLogin={context.profile.login}
+      profileEmail={context.profile.email}
+      profilePhone={context.profile.phone}
+      profileAvatarUrl={context.profile.avatarUrl}
       activeMode={context.activeMode}
       hasStaffPersona={context.staffMembershipsCount > 0}
     >

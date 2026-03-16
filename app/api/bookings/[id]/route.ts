@@ -1,4 +1,12 @@
-import { BookingStatus, CustomerRecordStatus, MembershipActorRole, PaymentStatus, Role } from '@prisma/client'
+import {
+  BookingStatus,
+  CustomerRecordStatus,
+  MembershipActorRole,
+  OrderSource,
+  OrderStatus,
+  PaymentStatus,
+  Role,
+} from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 import { invalidateAvailabilityCacheForClubSlot } from '@/src/lib/availabilityCache'
 import { expireActiveHolds } from '@/src/lib/availabilityService'
@@ -16,6 +24,7 @@ import {
 } from '@/src/lib/authorization'
 import { prisma } from '@/src/lib/prisma'
 import { PERMISSIONS } from '@/src/lib/rbac'
+import { CommerceError, markOfflineOrderPaidByStaff } from '@/src/lib/commerceService'
 import { MembershipFlowError, reverseMembershipConsumptionForBooking } from '@/src/lib/membershipService'
 
 export const dynamic = 'force-dynamic'
@@ -394,18 +403,132 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     if (action === 'mark_paid') {
-      const booking = await prisma.booking.update({
+      const booking = await prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: { room: true },
+      })
+      if (!booking) {
+        return NextResponse.json({ error: 'Booking not found.' }, { status: 404 })
+      }
+
+      const baseAmountCents = booking.priceTotalCents ?? booking.room.pricePerNightCents
+
+      if (booking.paymentStatus === PaymentStatus.PAID && booking.invoiceId) {
+        return NextResponse.json(booking)
+      }
+
+      if (booking.paymentStatus === PaymentStatus.PAID && !booking.orderId) {
+        return NextResponse.json(booking)
+      }
+
+      if (booking.clubId && booking.clientUserId) {
+        const orderId =
+          booking.orderId ||
+          (
+            await prisma.$transaction(async (tx) => {
+              const legacyOrder = await tx.order.create({
+                data: {
+                  orderNumber: `LEGACY-${booking.id}`,
+                  userId: booking.clientUserId as string,
+                  clubId: booking.clubId as string,
+                  status: OrderStatus.AWAITING_OFFLINE_PAYMENT,
+                  source: OrderSource.HOST_ASSISTED,
+                  currency: booking.priceCurrency || 'KZT',
+                  subtotalCents: baseAmountCents,
+                  discountTotalCents: 0,
+                  taxTotalCents: 0,
+                  totalCents: baseAmountCents,
+                  pricingSnapshotJson: booking.priceSnapshotJson,
+                },
+              })
+
+              const orderItem = await tx.orderItem.create({
+                data: {
+                  orderId: legacyOrder.id,
+                  slotId: booking.slotId,
+                  seatId: booking.seatId,
+                  seatLabelSnapshot: booking.seatLabelSnapshot,
+                  roomId: booking.roomId,
+                  segmentId: null,
+                  startAtUtc: booking.checkIn,
+                  endAtUtc: booking.checkOut,
+                  quantity: 1,
+                  unitPriceCents: baseAmountCents,
+                  totalPriceCents: baseAmountCents,
+                  priceSnapshotJson: booking.priceSnapshotJson,
+                },
+              })
+
+              await tx.booking.update({
+                where: { id: booking.id },
+                data: {
+                  orderId: legacyOrder.id,
+                  orderItemId: orderItem.id,
+                },
+              })
+
+              await tx.auditLog.create({
+                data: {
+                  clubId: booking.clubId,
+                  actorUserId: authContext.userId,
+                  action: 'order.legacy_linked',
+                  entityType: 'order',
+                  entityId: legacyOrder.id,
+                  bookingId: booking.id,
+                  metadata: JSON.stringify({
+                    bookingId: booking.id,
+                    orderNumber: legacyOrder.orderNumber,
+                  }),
+                },
+              })
+
+              return legacyOrder.id
+            })
+          )
+
+        try {
+          const paid = await markOfflineOrderPaidByStaff({
+            orderId,
+            actorUserId: authContext.userId,
+            reason: 'Manual mark paid from booking operations',
+          })
+
+          const refreshed = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: { room: true },
+          })
+          if (!refreshed) {
+            return NextResponse.json({ error: 'Booking not found.' }, { status: 404 })
+          }
+
+          return NextResponse.json({
+            ...refreshed,
+            orderId: paid.orderId,
+            invoiceId: paid.invoiceId,
+          })
+        } catch (error) {
+          if (error instanceof CommerceError) {
+            return NextResponse.json({ code: error.code, error: error.message }, { status: error.status })
+          }
+          return NextResponse.json(
+            { error: 'Failed to mark booking as paid through order workflow.' },
+            { status: 500 },
+          )
+        }
+      }
+
+      const fallback = await prisma.booking.update({
         where: { id: bookingId },
         data: { paymentStatus: PaymentStatus.PAID },
         include: { room: true },
       })
 
-      if (booking.clubId) {
+      if (fallback.clubId) {
         await prisma.payment.create({
           data: {
-            clubId: booking.clubId,
-            bookingId: booking.id,
-            amountCents: booking.priceTotalCents ?? booking.room.pricePerNightCents,
+            clubId: fallback.clubId,
+            bookingId: fallback.id,
+            amountCents: baseAmountCents,
             method: 'OFFLINE_MANUAL',
             status: PaymentStatus.PAID,
             markedByUserId: authContext.userId,
@@ -414,17 +537,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
         await prisma.auditLog.create({
           data: {
-            clubId: booking.clubId,
+            clubId: fallback.clubId,
             actorUserId: authContext.userId,
             action: 'payment.marked_paid',
             entityType: 'booking',
-            entityId: String(booking.id),
-            bookingId: booking.id,
+            entityId: String(fallback.id),
+            bookingId: fallback.id,
+            metadata: JSON.stringify({
+              fallback: true,
+              reason: 'Booking has no client user linkage for order/invoice generation.',
+            }),
           },
         })
       }
 
-      return NextResponse.json(booking)
+      return NextResponse.json(fallback)
     }
 
     if (action === 'check_in') {
@@ -535,199 +662,143 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     if (action === 'move_seat') {
       const newSeatId = typeof body.newSeatId === 'string' ? body.newSeatId.trim() : ''
-      if (newSeatId && existing.clubId && existing.slotId) {
-        if (!isOperationalBookingStatus(existing.status)) {
-          return NextResponse.json(
-            { error: 'Only confirmed or checked-in bookings can be moved.' },
-            { status: 409 },
-          )
-        }
-        if (existing.seatId === newSeatId) {
-          return NextResponse.json(existing)
-        }
-
-        const latestMapVersion = await prisma.seatMapVersion.findFirst({
-          where: { clubId: existing.clubId },
-          orderBy: [{ versionNumber: 'desc' }, { publishedAt: 'desc' }],
-          select: { id: true },
-        })
-        if (!latestMapVersion) {
-          return NextResponse.json({ error: 'No published map version found.' }, { status: 409 })
-        }
-
-        const [targetSeat, currentSeat] = await Promise.all([
-          prisma.seatIndex.findFirst({
-            where: {
-              clubId: existing.clubId,
-              mapVersionId: latestMapVersion.id,
-              seatId: newSeatId,
-              isActive: true,
-            },
-            select: {
-              seatId: true,
-              label: true,
-              segmentId: true,
-              isDisabled: true,
-              disabledReason: true,
-            },
-          }),
-          existing.seatId
-            ? prisma.seatIndex.findFirst({
-                where: {
-                  clubId: existing.clubId,
-                  mapVersionId: latestMapVersion.id,
-                  seatId: existing.seatId,
-                  isActive: true,
-                },
-                select: {
-                  seatId: true,
-                  label: true,
-                  segmentId: true,
-                },
-              })
-            : Promise.resolve(null),
-        ])
-
-        if (!targetSeat) {
-          return NextResponse.json({ error: 'Target seat was not found.' }, { status: 404 })
-        }
-        if (targetSeat.isDisabled) {
-          return NextResponse.json(
-            {
-              code: 'SEAT_NOT_AVAILABLE',
-              error: targetSeat.disabledReason
-                ? `Seat is disabled: ${targetSeat.disabledReason}`
-                : 'Seat is disabled.',
-            },
-            { status: 409 },
-          )
-        }
-
-        if (currentSeat && currentSeat.segmentId !== targetSeat.segmentId) {
-          return NextResponse.json(
-            {
-              code: 'SEGMENT_MISMATCH',
-              error: 'Cannot move booking to a different segment yet.',
-            },
-            { status: 409 },
-          )
-        }
-
-        await expireActiveHolds(prisma, {
-          clubId: existing.clubId,
-          slotId: existing.slotId,
-          seatId: newSeatId,
-        })
-
-        const overlappingSeatBooking = await prisma.booking.findFirst({
-          where: {
-            id: { not: bookingId },
-            clubId: existing.clubId,
-            slotId: existing.slotId,
-            seatId: newSeatId,
-            status: { in: [...seatBlockingBookingStatuses()] },
-          },
-          select: { id: true },
-        })
-        if (overlappingSeatBooking) {
-          return NextResponse.json(
-            { error: 'Target seat is not available for this slot.' },
-            { status: 409 },
-          )
-        }
-
-        const booking = await prisma.$transaction(async (tx) => {
-          const updated = await tx.booking.update({
-            where: { id: bookingId },
-            data: {
-              seatId: newSeatId,
-              seatLabelSnapshot: targetSeat.label,
-            },
-            include: { room: true },
-          })
-
-          await tx.auditLog.create({
-            data: {
-              clubId: updated.clubId,
-              actorUserId: authContext.userId,
-              action: 'booking.moved_seat',
-              entityType: 'booking',
-              entityId: String(updated.id),
-              bookingId: updated.id,
-              metadata: JSON.stringify({
-                slotId: updated.slotId,
-                fromSeatId: existing.seatId,
-                toSeatId: newSeatId,
-                fromSeatLabel: currentSeat?.label ?? null,
-                toSeatLabel: targetSeat.label,
-              }),
-            },
-          })
-
-          return updated
-        })
-        invalidateSeatAvailability(booking)
-        return NextResponse.json(booking)
-      }
-
-      const roomId = Number(body.roomId)
-      if (!roomId) {
+      if (!newSeatId || !existing.clubId || !existing.slotId) {
         return NextResponse.json(
-          { error: 'newSeatId is required for slot-based move, or roomId for legacy move.' },
+          { error: 'newSeatId is required for seat-based move.' },
           { status: 400 },
         )
       }
-
-      const targetRoom = await prisma.room.findUnique({
-        where: { id: roomId },
-      })
-
-      if (!targetRoom) {
-        return NextResponse.json({ error: 'Target room was not found.' }, { status: 404 })
-      }
-
-      if (existing.clubId && targetRoom.clubId !== existing.clubId) {
-        return NextResponse.json({ error: 'Target room is outside booking club.' }, { status: 400 })
-      }
-
-      const overlapping = await prisma.booking.findFirst({
-        where: {
-          id: { not: bookingId },
-          roomId,
-          status: { in: [...activeBookingStatuses()] },
-          checkIn: { lt: existing.checkOut },
-          checkOut: { gt: existing.checkIn },
-        },
-      })
-
-      if (overlapping) {
+      if (!isOperationalBookingStatus(existing.status)) {
         return NextResponse.json(
-          { error: 'Target seat is not available for this time.' },
+          { error: 'Only confirmed or checked-in bookings can be moved.' },
+          { status: 409 },
+        )
+      }
+      if (existing.seatId === newSeatId) {
+        return NextResponse.json(existing)
+      }
+
+      const latestMapVersion = await prisma.seatMapVersion.findFirst({
+        where: { clubId: existing.clubId },
+        orderBy: [{ versionNumber: 'desc' }, { publishedAt: 'desc' }],
+        select: { id: true },
+      })
+      if (!latestMapVersion) {
+        return NextResponse.json({ error: 'No published map version found.' }, { status: 409 })
+      }
+
+      const [targetSeat, currentSeat] = await Promise.all([
+        prisma.seatIndex.findFirst({
+          where: {
+            clubId: existing.clubId,
+            mapVersionId: latestMapVersion.id,
+            seatId: newSeatId,
+            isActive: true,
+          },
+          select: {
+            seatId: true,
+            label: true,
+            segmentId: true,
+            isDisabled: true,
+            disabledReason: true,
+          },
+        }),
+        existing.seatId
+          ? prisma.seatIndex.findFirst({
+              where: {
+                clubId: existing.clubId,
+                mapVersionId: latestMapVersion.id,
+                seatId: existing.seatId,
+                isActive: true,
+              },
+              select: {
+                seatId: true,
+                label: true,
+                segmentId: true,
+              },
+            })
+          : Promise.resolve(null),
+      ])
+
+      if (!targetSeat) {
+        return NextResponse.json({ error: 'Target seat was not found.' }, { status: 404 })
+      }
+      if (targetSeat.isDisabled) {
+        return NextResponse.json(
+          {
+            code: 'SEAT_NOT_AVAILABLE',
+            error: targetSeat.disabledReason
+              ? `Seat is disabled: ${targetSeat.disabledReason}`
+              : 'Seat is disabled.',
+          },
           { status: 409 },
         )
       }
 
-      const booking = await prisma.booking.update({
-        where: { id: bookingId },
-        data: { roomId },
-        include: { room: true },
-      })
-      invalidateSeatAvailability(booking)
+      if (currentSeat && currentSeat.segmentId !== targetSeat.segmentId) {
+        return NextResponse.json(
+          {
+            code: 'SEGMENT_MISMATCH',
+            error: 'Cannot move booking to a different segment yet.',
+          },
+          { status: 409 },
+        )
+      }
 
-      if (booking.clubId) {
-        await prisma.auditLog.create({
+      await expireActiveHolds(prisma, {
+        clubId: existing.clubId,
+        slotId: existing.slotId,
+        seatId: newSeatId,
+      })
+
+      const overlappingSeatBooking = await prisma.booking.findFirst({
+        where: {
+          id: { not: bookingId },
+          clubId: existing.clubId,
+          slotId: existing.slotId,
+          seatId: newSeatId,
+          status: { in: [...seatBlockingBookingStatuses()] },
+        },
+        select: { id: true },
+      })
+      if (overlappingSeatBooking) {
+        return NextResponse.json(
+          { error: 'Target seat is not available for this slot.' },
+          { status: 409 },
+        )
+      }
+
+      const booking = await prisma.$transaction(async (tx) => {
+        const updated = await tx.booking.update({
+          where: { id: bookingId },
           data: {
-            clubId: booking.clubId,
+            seatId: newSeatId,
+            seatLabelSnapshot: targetSeat.label,
+          },
+          include: { room: true },
+        })
+
+        await tx.auditLog.create({
+          data: {
+            clubId: updated.clubId,
             actorUserId: authContext.userId,
             action: 'booking.moved_seat',
             entityType: 'booking',
-            entityId: String(booking.id),
-            bookingId: booking.id,
-            metadata: JSON.stringify({ fromRoomId: existing.roomId, toRoomId: roomId }),
+            entityId: String(updated.id),
+            bookingId: updated.id,
+            metadata: JSON.stringify({
+              slotId: updated.slotId,
+              fromSeatId: existing.seatId,
+              toSeatId: newSeatId,
+              fromSeatLabel: currentSeat?.label ?? null,
+              toSeatLabel: targetSeat.label,
+            }),
           },
         })
-      }
 
+        return updated
+      })
+      invalidateSeatAvailability(booking)
       return NextResponse.json(booking)
     }
 

@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
         const booking = row.order.bookings[0] || null
         return {
           invoiceId: row.id,
+          receiptNumber: row.invoiceNumber,
           paymentId: null,
           status: row.status,
           amountCents: row.totalCents,
@@ -133,6 +134,7 @@ export async function GET(request: NextRequest) {
       }),
       ...legacyPaymentRows.map((item) => ({
         invoiceId: String(item.id),
+        receiptNumber: `RCP-${item.id}`,
         paymentId: item.id,
         status: item.status,
         amountCents: item.amountCents,

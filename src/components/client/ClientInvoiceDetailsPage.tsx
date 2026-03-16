@@ -44,15 +44,12 @@ type InvoiceDetail = {
   printableUrl: string
 }
 
-function formatMoney(cents: number, currency: string) {
+function formatMoney(amountKzt: number, _currency: string) {
+  const rounded = Math.max(0, Math.trunc(amountKzt))
   try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      maximumFractionDigits: 2,
-    }).format(cents / 100)
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(rounded)} KZT`
   } catch {
-    return `${(cents / 100).toFixed(2)} ${currency}`
+    return `${rounded} KZT`
   }
 }
 

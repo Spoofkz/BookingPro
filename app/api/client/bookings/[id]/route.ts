@@ -94,6 +94,48 @@ export async function GET(_: Request, routeContext: RouteContext) {
       }),
     ])
 
+    let seatSegment:
+      | {
+          segmentId: string
+          segmentName: string | null
+        }
+      | null = null
+
+    if (booking.club?.id && booking.seatId) {
+      const latestMapVersion = await prisma.seatMapVersion.findFirst({
+        where: { clubId: booking.club.id },
+        orderBy: [{ versionNumber: 'desc' }, { publishedAt: 'desc' }],
+        select: { id: true },
+      })
+      if (latestMapVersion) {
+        const seat = await prisma.seatIndex.findFirst({
+          where: {
+            clubId: booking.club.id,
+            mapVersionId: latestMapVersion.id,
+            seatId: booking.seatId,
+          },
+          select: { segmentId: true },
+        })
+        if (seat?.segmentId) {
+          const segment = await prisma.segment.findUnique({
+            where: { id: seat.segmentId },
+            select: { name: true },
+          })
+          seatSegment = {
+            segmentId: seat.segmentId,
+            segmentName: segment?.name ?? null,
+          }
+        }
+      }
+    }
+
+    if (!seatSegment && booking.room?.segmentId) {
+      seatSegment = {
+        segmentId: booking.room.segmentId,
+        segmentName: booking.room.segment?.name ?? null,
+      }
+    }
+
     const timeline = [
       {
         id: `booking-created-${booking.id}`,
@@ -181,6 +223,7 @@ export async function GET(_: Request, routeContext: RouteContext) {
         },
       },
       timeline,
+      seatSegment,
     })
   } catch (error) {
     if (error instanceof ClientOwnershipError) {

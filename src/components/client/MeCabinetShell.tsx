@@ -21,13 +21,41 @@ const navItems: NavItem[] = [
   { label: 'Privacy & Consents', href: '/me/privacy' },
 ]
 
+function getProfileInitials(name: string | null | undefined) {
+  if (!name) return 'U'
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+  if (parts.length === 0) return 'U'
+  return parts
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('')
+}
+
+function getProfileLoginLabel(login: string | null, email: string | null, phone: string | null) {
+  if (login) return `@${login}`
+  if (email) return email
+  if (phone) return phone
+  return 'no-login'
+}
+
 export default function MeCabinetShell({
   profileName,
+  profileLogin,
+  profileEmail,
+  profilePhone,
+  profileAvatarUrl,
   activeMode,
   hasStaffPersona,
   children,
 }: {
   profileName: string
+  profileLogin: string | null
+  profileEmail: string | null
+  profilePhone: string | null
+  profileAvatarUrl: string | null
   activeMode: 'CLIENT' | 'STAFF'
   hasStaffPersona: boolean
   children: ReactNode
@@ -92,7 +120,22 @@ export default function MeCabinetShell({
             <BookingProLogo href="/me" subtitle="Client Cabinet" />
             <span className="chip">Customer Self-Service</span>
             <span className="chip">Mode: {activeMode}</span>
-            <span className="ml-auto text-xs text-[var(--muted)]">{profileName}</span>
+            <div className="ml-auto flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-1">
+              <span className="inline-flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--bg)] text-xs font-semibold text-[var(--text)]">
+                {profileAvatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={profileAvatarUrl} alt={profileName || 'Client'} className="h-full w-full object-cover" />
+                ) : (
+                  getProfileInitials(profileName)
+                )}
+              </span>
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-xs font-semibold text-[var(--text)]">{profileName}</span>
+                <span className="truncate text-[11px] text-[var(--muted)]">
+                  {getProfileLoginLabel(profileLogin, profileEmail, profilePhone)}
+                </span>
+              </span>
+            </div>
             {hasStaffPersona ? (
               <button
                 type="button"

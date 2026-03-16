@@ -16,6 +16,7 @@ import { activeBookingStatuses } from '@/src/lib/bookingLifecycle'
 import { generatePriceQuote } from '@/src/lib/pricingEngine'
 import { prisma } from '@/src/lib/prisma'
 import { resolveOrCreateCustomerForBooking } from '@/src/lib/customerManagement'
+import { resolveOrCreateOperationalRoom } from '@/src/lib/operationalRoom'
 
 const DEFAULT_ORDER_TTL_MINUTES = 10
 
@@ -154,33 +155,6 @@ function parseDiscountFromBreakdown(
   return discount
 }
 
-async function resolveOrderRoom(params: {
-  clubId: string
-  roomId?: number | null
-  tx: Prisma.TransactionClient
-}) {
-  if (params.roomId) {
-    const room = await params.tx.room.findFirst({
-      where: { id: params.roomId, clubId: params.clubId },
-      select: { id: true, segmentId: true },
-    })
-    if (room) return room
-  }
-  const fallback = await params.tx.room.findFirst({
-    where: { clubId: params.clubId },
-    orderBy: { id: 'asc' },
-    select: { id: true, segmentId: true },
-  })
-  if (!fallback) {
-    throw new CommerceError(
-      'ROOM_NOT_FOUND',
-      409,
-      'No operational room is configured for this club.',
-    )
-  }
-  return fallback
-}
-
 async function resolveSeatSnapshot(params: {
   tx: Prisma.TransactionClient
   clubId: string
@@ -305,10 +279,11 @@ export async function createClientSeatOrder(input: CreateSeatOrderInput) {
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const room = await resolveOrderRoom({
+    const room = await resolveOrCreateOperationalRoom({
       tx,
       clubId: input.clubId,
-      roomId: input.roomId ?? null,
+      preferredRoomId: input.roomId ?? null,
+      seatSegmentId: null,
     })
 
     const holdById = new Map(holds.map((hold) => [hold.id, hold]))
@@ -688,15 +663,16 @@ export async function finalizeOwnedOrder(input: FinalizeOrderInput) {
         throw new CommerceError('SEAT_NOT_AVAILABLE', 409, 'Seat is already booked.')
       }
 
-      const room = await resolveOrderRoom({
-        tx,
-        clubId: order.clubId,
-        roomId: item.roomId,
-      })
       const seat = await resolveSeatSnapshot({
         tx,
         clubId: order.clubId,
         seatId: hold.seatId,
+      })
+      const room = await resolveOrCreateOperationalRoom({
+        tx,
+        clubId: order.clubId,
+        preferredRoomId: item.roomId,
+        seatSegmentId: seat.segmentId,
       })
 
       const guestName = input.guestName || order.user.name || 'Guest'

@@ -5,6 +5,7 @@ import {
   getSessionUserByToken,
   isDemoAuthEnabled,
 } from '@/src/lib/authSession'
+import { getClientProfilePrefs } from '@/src/lib/clientProfilePrefs'
 import { prisma } from '@/src/lib/prisma'
 
 const DEMO_EMAIL_FALLBACK = 'azamat@example.com'
@@ -32,6 +33,7 @@ export type CabinetContext = {
     name: string
     phone: string | null
     email: string | null
+    avatarUrl: string | null
   }
   memberships: ContextMembership[]
   roles: ContextRole[]
@@ -194,6 +196,7 @@ export async function getCabinetContext(
     role: membership.role,
     status: membership.status,
   }))
+  const profilePrefs = await getClientProfilePrefs(user.id)
   const roles = normalizeRoles(memberships)
   const clubs = Array.from(
     new Map(
@@ -226,6 +229,7 @@ export async function getCabinetContext(
       name: user.name,
       phone: user.phone,
       email: user.email,
+      avatarUrl: profilePrefs.avatarUrl,
     },
     memberships,
     roles,

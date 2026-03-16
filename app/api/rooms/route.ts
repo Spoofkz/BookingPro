@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
 
   if (!Number.isInteger(pricePerNightCents) || pricePerNightCents < 0) {
     return NextResponse.json(
-      { error: 'Price per night must be zero or a positive integer (in cents).' },
+      { error: 'Price per night must be zero or a positive integer (KZT).' },
       { status: 400 },
     )
   }

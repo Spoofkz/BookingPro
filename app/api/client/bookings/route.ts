@@ -59,6 +59,13 @@ export async function GET(request: NextRequest) {
               id: true,
               name: true,
               slug: true,
+              segmentId: true,
+              segment: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
             },
           },
           club: {
@@ -78,7 +85,102 @@ export async function GET(request: NextRequest) {
       prisma.booking.count({ where }),
     ])
 
-    return NextResponse.json({ items, page, pageSize, total })
+    const clubIds = Array.from(
+      new Set(items.map((item) => item.clubId).filter((value): value is string => Boolean(value))),
+    )
+    const latestMapVersions = clubIds.length
+      ? await prisma.seatMapVersion.findMany({
+          where: { clubId: { in: clubIds } },
+          orderBy: [{ clubId: 'asc' }, { versionNumber: 'desc' }, { publishedAt: 'desc' }],
+          select: { clubId: true, id: true },
+        })
+      : []
+
+    const latestVersionByClubId = new Map<string, string>()
+    for (const row of latestMapVersions) {
+      if (!latestVersionByClubId.has(row.clubId)) {
+        latestVersionByClubId.set(row.clubId, row.id)
+      }
+    }
+
+    const seatIdsByClubId = new Map<string, Set<string>>()
+    for (const booking of items) {
+      if (!booking.clubId) continue
+      if (!booking.seatId) continue
+      if (!latestVersionByClubId.has(booking.clubId)) continue
+      const set = seatIdsByClubId.get(booking.clubId) ?? new Set<string>()
+      set.add(booking.seatId)
+      seatIdsByClubId.set(booking.clubId, set)
+    }
+
+    const seatSegmentByClubSeat = new Map<string, string>()
+    for (const [clubIdKey, seatIds] of seatIdsByClubId.entries()) {
+      const mapVersionId = latestVersionByClubId.get(clubIdKey)
+      if (!mapVersionId || seatIds.size < 1) continue
+      const rows = await prisma.seatIndex.findMany({
+        where: {
+          clubId: clubIdKey,
+          mapVersionId,
+          seatId: { in: Array.from(seatIds) },
+        },
+        select: {
+          seatId: true,
+          segmentId: true,
+        },
+      })
+      for (const row of rows) {
+        seatSegmentByClubSeat.set(`${clubIdKey}:${row.seatId}`, row.segmentId)
+      }
+    }
+
+    const rawSegmentIds = Array.from(
+      new Set(
+        items
+          .flatMap((booking) => {
+            if (!booking.clubId) return [booking.room?.segmentId ?? null]
+            const fromSeat = booking.seatId
+              ? seatSegmentByClubSeat.get(`${booking.clubId}:${booking.seatId}`) ?? null
+              : null
+            return [fromSeat, booking.room?.segmentId ?? null]
+          }),
+      ),
+    )
+    const segmentIds = rawSegmentIds.filter((value): value is string => Boolean(value))
+    const segmentRows = segmentIds.length
+      ? await prisma.segment.findMany({
+          where: { id: { in: segmentIds } },
+          select: { id: true, name: true },
+        })
+      : []
+    const segmentNameById = new Map(segmentRows.map((segment) => [segment.id, segment.name]))
+
+    const normalizedItems = items.map((booking) => {
+      if (!booking.clubId) {
+        return {
+          ...booking,
+          seatSegment: null,
+        }
+      }
+      const seatSegmentId = booking.seatId
+        ? seatSegmentByClubSeat.get(`${booking.clubId}:${booking.seatId}`) ?? null
+        : null
+      const segmentId = seatSegmentId || booking.room?.segmentId || null
+      const segmentName =
+        (segmentId ? segmentNameById.get(segmentId) : null) ||
+        booking.room?.segment?.name ||
+        null
+      return {
+        ...booking,
+        seatSegment: segmentId
+          ? {
+              segmentId,
+              segmentName,
+            }
+          : null,
+      }
+    })
+
+    return NextResponse.json({ items: normalizedItems, page, pageSize, total })
   } catch {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
   }

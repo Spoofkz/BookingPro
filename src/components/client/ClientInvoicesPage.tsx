@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 
 type InvoiceListItem = {
   invoiceId: string
+  receiptNumber: string
   paymentId: number | null
   status: string
   amountCents: number
@@ -34,15 +35,12 @@ type InvoiceListItem = {
   downloadPdfUrl: string
 }
 
-function formatMoney(cents: number, currency: string) {
+function formatMoney(amountKzt: number, _currency: string) {
+  const rounded = Math.max(0, Math.trunc(amountKzt))
   try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      maximumFractionDigits: 2,
-    }).format(cents / 100)
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(rounded)} KZT`
   } catch {
-    return `${(cents / 100).toFixed(2)} ${currency}`
+    return `${rounded} KZT`
   }
 }
 
@@ -108,7 +106,7 @@ export default function ClientInvoicesPage() {
             <article key={item.invoiceId} className="panel-strong space-y-2 p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="font-medium">
-                  Receipt #{item.invoiceId} · {item.status}
+                  {item.receiptNumber} · {item.status}
                 </p>
                 <span className="ml-auto text-xs text-[var(--muted)]">
                   {new Date(item.issuedAt).toLocaleString()}

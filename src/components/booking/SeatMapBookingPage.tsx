@@ -33,6 +33,11 @@ type PublicClubItem = {
   nextSlotAt: string | null
 }
 
+type PublicSegmentItem = {
+  id: string
+  name: string
+}
+
 type SlotItem = {
   slotId: string
   startAt: string
@@ -92,6 +97,17 @@ type HoldResponse = {
   expiresAt: string
 }
 
+type QuotePreviewResponse = {
+  quoteId: string
+  currency: string
+  total: number
+  breakdown: Array<{
+    type: string
+    label: string
+    amount: number
+  }>
+}
+
 type ConfirmHoldResponse = {
   bookingId: number
   status: string
@@ -115,6 +131,7 @@ type VisualSeatRow = {
   seatId: string
   label: string
   segmentId: string
+  segmentName: string
   roomId: string | null
   geometry: RectGeometry
   status: 'AVAILABLE' | 'HELD' | 'BOOKED' | 'DISABLED'
@@ -169,6 +186,15 @@ function formatSlotLabel(slot: SlotItem) {
   return `${new Date(slot.startAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${new Date(slot.endAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
 }
 
+function formatMoney(amountKzt: number, _currency = 'KZT') {
+  const rounded = Math.max(0, Math.trunc(amountKzt))
+  try {
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(rounded)} KZT`
+  } catch {
+    return `${rounded} KZT`
+  }
+}
+
 function formatCountdown(expiresAtIso: string, nowMs: number) {
   const msLeft = new Date(expiresAtIso).getTime() - nowMs
   if (msLeft <= 0) return '00:00'
@@ -182,6 +208,7 @@ export default function SeatMapBookingPage() {
   const router = useRouter()
   const [activeClubId, setActiveClubId] = useState<string | null>(null)
   const [publicClubs, setPublicClubs] = useState<PublicClubItem[]>([])
+  const [segmentNameById, setSegmentNameById] = useState<Record<string, string>>({})
   const [selectedPublicClubId, setSelectedPublicClubId] = useState<string | null>(null)
   const [activeRole, setActiveRole] = useState<string>('CLIENT')
   const [guestForm, setGuestForm] = useState<BookingGuestForm>({
@@ -200,6 +227,9 @@ export default function SeatMapBookingPage() {
   const [availabilitySeats, setAvailabilitySeats] = useState<AvailabilitySeat[]>([])
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null)
   const [hold, setHold] = useState<HoldResponse | null>(null)
+  const [quotePreview, setQuotePreview] = useState<QuotePreviewResponse | null>(null)
+  const [quoteLoading, setQuoteLoading] = useState(false)
+  const [quoteError, setQuoteError] = useState<string | null>(null)
   const [confirmResult, setConfirmResult] = useState<ConfirmHoldResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [availabilityBusy, setAvailabilityBusy] = useState(false)
@@ -235,6 +265,23 @@ export default function SeatMapBookingPage() {
       return items[0]?.clubId || null
     })
     return items
+  }
+
+  async function loadPublicSegments(clubId: string) {
+    const response = await fetch(`/api/clubs/public/${clubId}/segments`, { cache: 'no-store' })
+    if (!response.ok) {
+      setSegmentNameById({})
+      return
+    }
+    const payload = await readJson<{ items: PublicSegmentItem[] }>(
+      response,
+      'Failed to load segments.',
+    )
+    const map: Record<string, string> = {}
+    for (const item of payload.items || []) {
+      map[item.id] = item.name
+    }
+    setSegmentNameById(map)
   }
 
   async function loadMe() {
@@ -695,6 +742,22 @@ export default function SeatMapBookingPage() {
   }, [effectiveClubId])
 
   useEffect(() => {
+    if (!effectiveClubId) {
+      setSegmentNameById({})
+      return
+    }
+    let cancelled = false
+    void loadPublicSegments(effectiveClubId).catch(() => {
+      if (!cancelled) {
+        setSegmentNameById({})
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [effectiveClubId])
+
+  useEffect(() => {
     if (!effectiveClubId) return
     const clubId = effectiveClubId
     let cancelled = false
@@ -745,6 +808,67 @@ export default function SeatMapBookingPage() {
     }
   }, [hold, nowMs])
 
+  useEffect(() => {
+    if (!effectiveClubId || !selectedSlotId || !selectedSeatId) {
+      setQuotePreview(null)
+      setQuoteError(null)
+      return
+    }
+
+    let cancelled = false
+    async function loadQuote() {
+      setQuoteLoading(true)
+      setQuoteError(null)
+      try {
+        const response = await fetch('/api/pricing/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clubId: effectiveClubId,
+            slotId: selectedSlotId,
+            seatId: selectedSeatId,
+            channel: 'ONLINE',
+          }),
+        })
+        const payload = (await response.json()) as
+          | QuotePreviewResponse
+          | {
+              error?: string
+              code?: string
+            }
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error('Login to view exact price quote.')
+          }
+          const message =
+            payload && typeof payload === 'object' && 'error' in payload
+              ? (payload.error as string | undefined)
+              : undefined
+          throw new Error(message || 'Failed to load quote preview.')
+        }
+        if (!cancelled) {
+          setQuotePreview(payload as QuotePreviewResponse)
+        }
+      } catch (quoteLoadError) {
+        if (!cancelled) {
+          setQuotePreview(null)
+          setQuoteError(
+            quoteLoadError instanceof Error ? quoteLoadError.message : 'Failed to load quote preview.',
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setQuoteLoading(false)
+        }
+      }
+    }
+
+    void loadQuote()
+    return () => {
+      cancelled = true
+    }
+  }, [effectiveClubId, selectedSeatId, selectedSlotId])
+
   const floorOptions = useMemo(
     () => Array.from(new Set(publishedSeats.map((seat) => seat.floorId))).sort((a, b) => a.localeCompare(b)),
     [publishedSeats],
@@ -770,10 +894,12 @@ export default function SeatMapBookingPage() {
     for (const seat of publishedSeats) {
       if (seat.floorId !== selectedFloorId || !seat.geometry) continue
       const overlay = availabilityBySeatId.get(seat.seatId)
+      const segmentName = segmentNameById[seat.segmentId] || seat.segmentId
       rows.push({
         seatId: seat.seatId,
         label: seat.label,
         segmentId: seat.segmentId,
+        segmentName,
         roomId: seat.roomId,
         geometry: seat.geometry,
         status: overlay?.status ?? (seat.isDisabled ? 'DISABLED' : 'AVAILABLE'),
@@ -783,11 +909,15 @@ export default function SeatMapBookingPage() {
     }
     rows.sort((a, b) => a.label.localeCompare(b.label))
     return rows
-  }, [availabilityBySeatId, publishedSeats, selectedFloorId])
+  }, [availabilityBySeatId, publishedSeats, segmentNameById, selectedFloorId])
 
   const selectedSeat = useMemo(
     () => visualSeats.find((seat) => seat.seatId === selectedSeatId) ?? null,
     [selectedSeatId, visualSeats],
+  )
+  const holdSeat = useMemo(
+    () => (hold ? visualSeats.find((seat) => seat.seatId === hold.seatId) ?? null : null),
+    [hold, visualSeats],
   )
 
   const counts = useMemo(() => {
@@ -859,9 +989,6 @@ export default function SeatMapBookingPage() {
                 </button>
               </>
             )}
-            <Link href="/bookings/legacy" className="rounded-full border border-[var(--border)] px-2 py-1 hover:bg-white/10">
-              Open legacy room-based page
-            </Link>
           </div>
         </header>
 
@@ -1091,7 +1218,7 @@ export default function SeatMapBookingPage() {
                                   onClick={() => setSelectedSeatId(seat.seatId)}
                                 >
                                   <title>
-                                    {`${seat.label} · ${seat.segmentId} · ${seat.status}`}
+                                    {`${seat.label} · ${seat.segmentName} · ${seat.status}`}
                                   </title>
                                 </rect>
                                 <text
@@ -1126,8 +1253,33 @@ export default function SeatMapBookingPage() {
                   {selectedSeat ? (
                     <div className="space-y-2 text-sm">
                       <p className="font-medium">{selectedSeat.label}</p>
-                      <p className="text-xs text-[var(--muted)]">Segment: {selectedSeat.segmentId}</p>
+                      <p className="text-xs text-[var(--muted)]">Seat type: {selectedSeat.segmentName}</p>
                       <p className={seatStatusTextClass(selectedSeat.status)}>{selectedSeat.status}</p>
+                      {quoteLoading ? (
+                        <p className="text-xs text-[var(--muted)]">Calculating price...</p>
+                      ) : quotePreview ? (
+                        <div className="rounded-lg border border-[var(--border)] bg-black/10 p-2 text-xs">
+                          <p>
+                            Estimated total:{' '}
+                            <span className="font-semibold">
+                              {formatMoney(quotePreview.total, quotePreview.currency)}
+                            </span>
+                          </p>
+                          {quotePreview.breakdown?.length ? (
+                            <p className="mt-1 text-[var(--muted)]">
+                              {quotePreview.breakdown
+                                .map((line) =>
+                                  `${line.label}: ${
+                                    line.amount < 0 ? '-' : ''
+                                  }${formatMoney(Math.abs(line.amount), quotePreview.currency)}`,
+                                )
+                                .join(' · ')}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : quoteError ? (
+                        <p className="text-xs text-amber-700 dark:text-amber-300">{quoteError}</p>
+                      ) : null}
                       {selectedSeat.holdExpiresAt ? (
                         <p className="text-xs text-[var(--muted)]">
                           Held until {new Date(selectedSeat.holdExpiresAt).toLocaleTimeString()}
@@ -1182,10 +1334,18 @@ export default function SeatMapBookingPage() {
 
                   {hold ? (
                     <div className="rounded-lg border border-amber-400/40 bg-amber-500/5 p-3 text-sm">
-                      <p className="font-medium">Active hold: {hold.seatId}</p>
+                      <p className="font-medium">
+                        Active hold: {holdSeat?.label || hold.seatId}
+                        {holdSeat ? ` · ${holdSeat.segmentName}` : ''}
+                      </p>
                       <p className="text-xs text-[var(--muted)]">
                         Expires in <span className="font-semibold">{holdCountdown}</span> ({new Date(hold.expiresAt).toLocaleTimeString()})
                       </p>
+                      {quotePreview ? (
+                        <p className="text-xs text-[var(--muted)]">
+                          Estimated total: {formatMoney(quotePreview.total, quotePreview.currency)}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                 </article>
@@ -1195,6 +1355,20 @@ export default function SeatMapBookingPage() {
                   <p className="text-xs text-[var(--muted)]">
                     Single-seat booking flow (v1). Group booking / multi-seat is a separate milestone.
                   </p>
+                  <div className="rounded-lg border border-[var(--border)] bg-black/10 p-2 text-xs">
+                    <p>
+                      Seat: {selectedSeat?.label || holdSeat?.label || hold?.seatId || 'N/A'} · Type:{' '}
+                      {selectedSeat?.segmentName || holdSeat?.segmentName || 'N/A'}
+                    </p>
+                    <p>
+                      Estimated total:{' '}
+                      {quotePreview
+                        ? formatMoney(quotePreview.total, quotePreview.currency)
+                        : quoteLoading
+                          ? 'Calculating...'
+                          : 'N/A'}
+                    </p>
+                  </div>
 
                   <label className="flex flex-col gap-1 text-sm">
                     Guest name
@@ -1293,7 +1467,7 @@ export default function SeatMapBookingPage() {
                       Seat: {confirmResult.seatId} · Status: {confirmResult.status} · Payment: {confirmResult.paymentStatus}
                     </p>
                     {typeof confirmResult.totalDue === 'number' ? (
-                      <p className="text-xs text-[var(--muted)]">Total due: {confirmResult.totalDue}</p>
+                      <p className="text-xs text-[var(--muted)]">Total due: {formatMoney(confirmResult.totalDue)}</p>
                     ) : null}
                   </article>
                 ) : null}

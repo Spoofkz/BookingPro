@@ -100,18 +100,14 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleString()
 }
 
-function formatMoney(cents: number | null, currency: string | null) {
-  if (typeof cents !== 'number' || cents < 0) return '—'
-  const amount = cents / 100
-  if (!currency) return amount.toFixed(2)
+function formatMoney(amountKzt: number | null, _currency: string | null) {
+  if (typeof amountKzt !== 'number' || amountKzt < 0) return '—'
+  const rounded = Math.trunc(amountKzt)
+  if (!_currency) return `${rounded} KZT`
   try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      maximumFractionDigits: 2,
-    }).format(amount)
+    return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(rounded)} KZT`
   } catch {
-    return amount.toFixed(2)
+    return `${rounded} KZT`
   }
 }
 

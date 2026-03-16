@@ -40,9 +40,11 @@ type MeResponse = {
   capabilities: Capabilities
   demoAuthEnabled?: boolean
   profile: {
+    login: string | null
     name: string
     phone: string | null
     email: string | null
+    avatarUrl: string | null
   }
 }
 
@@ -134,6 +136,10 @@ const navBySegment: Record<string, NavItem[]> = {
       href: '/cabinet/host/support',
       requiredClubPermission: PERMISSIONS.BOOKING_READ,
     },
+    {
+      label: 'Account',
+      href: '/cabinet/host/account',
+    },
   ],
   tech: [
     {
@@ -172,9 +178,23 @@ const navBySegment: Record<string, NavItem[]> = {
       requiredClubPermission: PERMISSIONS.CLUB_MANAGE_PROFILE,
     },
     {
+      label: 'Finance',
+      href: '/cabinet/tech/finance',
+      requiredClubPermission: PERMISSIONS.FINANCE_ANALYTICS_READ,
+    },
+    {
+      label: 'Payments',
+      href: '/cabinet/tech/payments',
+      requiredClubPermission: PERMISSIONS.PAYMENT_MARK_PAID,
+    },
+    {
       label: 'Audit',
       href: '/cabinet/tech/audit',
       requiredClubPermission: PERMISSIONS.CLUB_READ,
+    },
+    {
+      label: 'Account',
+      href: '/cabinet/tech/account',
     },
   ],
 }
@@ -189,6 +209,27 @@ function formatRoleLabel(role: Role) {
   if (role === Role.TECH_ADMIN) return 'CLUB_OWNER'
   if (role === Role.HOST_ADMIN) return 'HOST_ADMIN'
   return 'CLIENT'
+}
+
+function getProfileInitials(name: string | null | undefined) {
+  if (!name) return 'U'
+  const parts = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+  if (parts.length === 0) return 'U'
+  return parts
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('')
+}
+
+function getProfileLoginLabel(profile: MeResponse['profile'] | undefined) {
+  if (!profile) return 'loading'
+  if (profile.login) return `@${profile.login}`
+  if (profile.email) return profile.email
+  if (profile.phone) return profile.phone
+  return 'no-login'
 }
 
 export default function CabinetChrome({ children }: { children: ReactNode }) {
@@ -277,6 +318,11 @@ export default function CabinetChrome({ children }: { children: ReactNode }) {
     }
     return navItems.some((item) => item.href === pathname)
   }, [navItems, pathname])
+
+  const isStaffAccountRoute = useMemo(
+    () => pathname === '/cabinet/host/account' || pathname === '/cabinet/tech/account',
+    [pathname],
+  )
 
   async function updateContext(payload: Record<string, string | null>) {
     setUpdating(true)
@@ -370,9 +416,28 @@ export default function CabinetChrome({ children }: { children: ReactNode }) {
           <div className="flex flex-wrap items-center gap-2">
             <BookingProLogo href="/cabinet" subtitle="Staff Cabinet" />
             <span className="chip">Role-Based Portal</span>
-            <span className="ml-auto text-xs text-[var(--muted)]">
-              {loading ? 'Loading context...' : context?.profile.name}
-            </span>
+            <div className="ml-auto flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-1">
+              <span className="inline-flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--bg)] text-xs font-semibold text-[var(--text)]">
+                {context?.profile.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={context.profile.avatarUrl}
+                    alt={context.profile.name || 'User'}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  getProfileInitials(context?.profile.name)
+                )}
+              </span>
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-xs font-semibold text-[var(--text)]">
+                  {loading ? 'Loading profile...' : context?.profile.name || 'Unknown user'}
+                </span>
+                <span className="truncate text-[11px] text-[var(--muted)]">
+                  {getProfileLoginLabel(context?.profile)}
+                </span>
+              </span>
+            </div>
             <button
               type="button"
               className="rounded-full border border-[var(--border)] px-3 py-1 text-xs hover:bg-white/10 disabled:opacity-60"
@@ -526,17 +591,14 @@ export default function CabinetChrome({ children }: { children: ReactNode }) {
                   No accessible sections for current role and club.
                 </p>
               ) : null}
-              <Link
-                href="/bookings"
-                className="mt-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm hover:bg-white/10"
-              >
-                Legacy Booking UI
-              </Link>
             </nav>
           </aside>
 
           <section className="panel p-4 md:p-6">
-            {(segment === 'host' || segment === 'tech') && context && !context.activeClubId ? (
+            {(segment === 'host' || segment === 'tech') &&
+            context &&
+            !context.activeClubId &&
+            !isStaffAccountRoute ? (
               <div className="panel-strong rounded-lg p-4 text-sm">
                 <p className="font-medium">Club context required</p>
                 <p className="mt-1 text-[var(--muted)]">

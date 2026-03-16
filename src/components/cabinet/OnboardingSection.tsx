@@ -214,6 +214,15 @@ function safeJsonStringify(value: Record<string, unknown> | null) {
   return JSON.stringify(value, null, 2)
 }
 
+function scrollToHashTarget(hash: string | null) {
+  if (!hash) return
+  const targetId = hash.replace(/^#/, '').trim()
+  if (!targetId) return
+  const target = document.getElementById(targetId)
+  if (!target) return
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 export default function OnboardingSection() {
   const router = useRouter()
   const [activeClubId, setActiveClubId] = useState<string | null>(null)
@@ -402,6 +411,11 @@ export default function OnboardingSection() {
     void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    scrollToHashTarget(window.location.hash)
+  }, [loading, activeClubId])
 
   const completionLabel = useMemo(() => {
     if (!onboarding) return '0/0'
@@ -854,7 +868,7 @@ export default function OnboardingSection() {
               </label>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
+            <div id="address-geo" className="grid gap-3 md:grid-cols-2">
               <label className="flex flex-col gap-1 text-sm">
                 Address
                 <input
@@ -903,7 +917,7 @@ export default function OnboardingSection() {
               </label>
             </div>
 
-            <label className="flex flex-col gap-1 text-sm">
+            <label id="branding-assets" className="flex flex-col gap-1 text-sm">
               Description
               <textarea
                 className="panel min-h-[80px] rounded-lg px-3 py-2"
